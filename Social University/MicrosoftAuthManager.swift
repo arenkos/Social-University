@@ -271,31 +271,109 @@ public class MicrosoftAuthManager {
         }.resume()
     }
     
-    // Microsoft ile çıkış işlemi
-    public func signOut(completion: @escaping (Bool) -> Void) {
-        guard let application = msalApplication else {
-            // UserDefaults'tan kullanıcı bilgilerini sil
-            UserDefaults.standard.removeObject(forKey: userInfoKey)
-            UserDefaults.standard.set(false, forKey: isAuthenticatedKey)
-            completion(true)
-            return
+    // MSAL uygulamasını al
+    private func getMSALApplication() -> MSALPublicClientApplication? {
+        return msalApplication
+    }
+    
+    // MSAL hesabını al
+    private func getMSALAccount() -> MSALAccount? {
+        guard let application = getMSALApplication() else {
+            return nil
         }
         
         do {
             let accounts = try application.allAccounts()
-            if let account = accounts.first {
-                try application.remove(account)
-                print("Microsoft hesabından başarıyla çıkış yapıldı")
-            }
-            
-            // UserDefaults'tan kullanıcı bilgilerini sil
-            UserDefaults.standard.removeObject(forKey: userInfoKey)
-            UserDefaults.standard.set(false, forKey: isAuthenticatedKey)
-            
-            completion(true)
+            return accounts.first
         } catch {
-            print("Çıkış yapılırken hata oluştu: \(error)")
-            completion(false)
+            print("MSAL hesaplarını alma hatası: \(error)")
+            return nil
         }
+    }
+    
+    // Çıkış işlemi
+    func signOut(completion: @escaping (Bool) -> Void) {
+        // Önce kullanıcının demo kullanıcı olup olmadığını kontrol et
+        let isDemo = UserDefaults.standard.bool(forKey: "com.socialuniversity.isDemo")
+        
+        if isDemo {
+            // Demo kullanıcı için oturum bilgilerini temizle
+            clearUserDefaults()
+            completion(true)
+            return
+        }
+        
+        // Microsoft kullanıcısı için çıkış işlemi
+        guard let application = getMSALApplication() else {
+            clearUserDefaults()
+            completion(false)
+            return
+        }
+        
+        guard let account = getMSALAccount() else {
+            clearUserDefaults()
+            completion(true) // Hesap bulunamadıysa başarılı kabul et
+            return
+        }
+        
+        // Hata mesajında belirtildiği gibi, signoutFromBrowser true olduğunda geçerli MSALWebviewParameters gerekiyor
+        #if canImport(UIKit)
+        // UIKit mevcutsa, bir UI view controller belirtmeliyiz
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let viewController = windowScene.windows.first?.rootViewController {
+            // WebView parametreleri oluştur
+            let webViewParameters = MSALWebviewParameters(authPresentationViewController: viewController)
+            webViewParameters.webviewType = .wkWebView
+            
+            // Signout parametrelerini, webViewParameters ile birlikte oluştur
+            let parameters = MSALSignoutParameters(webviewParameters: webViewParameters)
+            parameters.signoutFromBrowser = true
+            
+            // Çıkış işlemini gerçekleştir
+            do {
+                try application.signout(with: account, signoutParameters: parameters, completionBlock: { (success, error) in
+                    if let error = error {
+                        print("Microsoft çıkış hatası: \(error)")
+                        completion(false)
+                        return
+                    }
+                    
+                    self.clearUserDefaults()
+                    completion(true)
+                })
+            } catch {
+                print("Microsoft çıkış hatası: \(error)")
+                clearUserDefaults()
+                completion(false)
+            }
+        } else {
+            // View controller alınamadı, UserDefaults'u temizleyip çıkış yap
+            print("View controller alınamadı, UserDefaults temizleniyor")
+            clearUserDefaults()
+            completion(true)
+        }
+        #else
+        // UIKit yoksa, UserDefaults'u temizleyip çıkış yap
+        print("UIKit import edilemedi, UserDefaults temizleniyor")
+        clearUserDefaults()
+        completion(true)
+        #endif
+    }
+    
+    // UserDefaults'tan kullanıcı bilgilerini temizle
+    private func clearUserDefaults() {
+        // Tüm kullanıcı bilgilerini temizle
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userId")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userName")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userSurname")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userEmail")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userStudentNumber")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userDepartment")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.accessToken")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.account")
+        
+        // Değişiklikleri hemen uygula
+        UserDefaults.standard.synchronize()
     }
 } 

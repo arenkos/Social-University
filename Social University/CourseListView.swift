@@ -20,7 +20,63 @@ struct CourseListView: View {
     var user: User
     @State private var searchText = ""
     @State private var selectedDepartment: String?
-    @State private var departments: [String] = []
+    // Sabit bölüm listesi - API'den çekmek yerine burada statik olarak tanımlıyoruz
+    @State private var departments: [String] = [
+        "Adalet",
+        "Aşçılık",
+        "Bankacılık ve Sigortacılık",
+        "Bilgisayar Mühendisliği",
+        "Bilgisayar Programcılığı",
+        "Bilişim Güvenliği Teknolojisi",
+        "Çocuk Gelişimi",
+        "Dış Ticaret",
+        "Dijital Oyun Tasarımı",
+        "Ekonomi",
+        "Elektrik",
+        "Elektrik-Elektronik Mühendisliği",
+        "Elektronik Teknolojisi",
+        "Endüstri Mühendisliği",
+        "Fotoğrafçılık ve Kameramanlık",
+        "Gastronomi ve Mutfak Sanatları",
+        "Görsel İletişim Tasarımı",
+        "Grafik",
+        "Grafik Tasarımı",
+        "Halkla İlişkiler ve Tanıtım",
+        "Hukuk",
+        "İç Mimarlık",
+        "İletişim Tasarımı",
+        "İngiliz Dili ve Edebiyatı",
+        "İnsan Kaynakları Yönetimi",
+        "İnşaat Mühendisliği",
+        "İnşaat Teknolojisi",
+        "İş Sağlığı ve Güvenliği",
+        "İşletme (İngilizce)",
+        "İşletme (Türkçe)",
+        "Lojistik",
+        "Makine",
+        "Makine Mühendisliği",
+        "Matematik",
+        "Mekatronik",
+        "Mimari Restorasyon",
+        "Mimarlık",
+        "Moda Tasarımı",
+        "Mütercim-Tercümanlık",
+        "Otomotiv Teknolojisi",
+        "Psikoloji (İngilizce)",
+        "Psikoloji (Türkçe)",
+        "Radyo ve Televizyon Programcılığı",
+        "Sivil Hava Ulaştırma İşletmeciliği",
+        "Sivil Havacılık Kabin Hizmetleri",
+        "Spor Yönetimi",
+        "Türk Dili ve Edebiyatı",
+        "Turizm ve Otel İşletmeciliği",
+        "Uçak Teknolojisi",
+        "Uluslararası İlişkiler",
+        "Uluslararası Ticaret ve İşletmecilik",
+        "Uygulamalı İngilizce ve Çevirmenlik",
+        "Yazılım Mühendisliği",
+        "Yönetim Bilişim Sistemleri"
+    ]
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingLogoutAlert = false
@@ -28,8 +84,15 @@ struct CourseListView: View {
     // Uygulama genelinde oturum durumunu takip eden değişkenlere erişim
     @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
     
+    // UniversitySelectionView'dan seçilen değerlere erişim
+    @AppStorage("selectedUniversity") private var selectedUniversity = ""
+    @AppStorage("selectedDepartment") private var savedDepartment = ""
+    
     // Oturum durumunu güncelleyebilmek için Environment değişkeni
     @Environment(\.presentationMode) private var presentationMode
+    
+    // Çıkış yapıldığında giriş sayfasına dönmek için
+    @State private var shouldNavigateToLogin = false
     
     var filteredCourses: [Course] {
         courses.filter { course in
@@ -53,6 +116,7 @@ struct CourseListView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
                 
+                /*
                 if !departments.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
@@ -82,8 +146,28 @@ struct CourseListView: View {
                         }
                     }
                 }
+                */
             }
             .padding()
+            
+            // Seçilen üniversite ve bölüm bilgisi gösterimi
+            if !selectedUniversity.isEmpty {
+                HStack {
+                    Text("Üniversite: \(selectedUniversity)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    if !savedDepartment.isEmpty {
+                        Text("Bölüm: \(savedDepartment)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
             
             if isLoading {
                 Spacer()
@@ -153,10 +237,50 @@ struct CourseListView: View {
             Text("Çıkış yaptığınızda oturumunuz sonlandırılacak ve giriş sayfasına yönlendirileceksiniz.")
         }
         .onAppear {
+            // UniversitySelectionView'dan seçilen bölüm varsa, bunu seçili bölüm olarak ayarla
+            if !savedDepartment.isEmpty {
+                selectedDepartment = savedDepartment
+            }
+            
             loadCourses()
         }
         .refreshable {
             loadCourses()
+        }
+        // NavigationStack'in kökünde bulunan login sayfasına dön
+        .onChange(of: shouldNavigateToLogin) { _, newValue in
+            if newValue {
+                #if canImport(UIKit)
+                if #available(iOS 15.0, *) {
+                    // iOS 15 ve üzeri için güncel yöntem
+                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                        return
+                    }
+                    
+                    if let rootViewController = windowScene.keyWindow?.rootViewController {
+                        // Ana ekrana dönmek için NavigationStack'i temizle
+                        if let navigationController = rootViewController as? UINavigationController {
+                            navigationController.popToRootViewController(animated: true)
+                        } else {
+                            // NavigationStack yoksa mevcut görünümleri kapat
+                            rootViewController.dismiss(animated: true)
+                        }
+                    }
+                } else {
+                    // iOS 15 öncesi için eski yöntem (kullanımdan kaldırıldı)
+                    if let window = UIApplication.shared.windows.first,
+                       let rootViewController = window.rootViewController {
+                        // Ana ekrana dönmek için NavigationStack'i temizle
+                        if let navigationController = rootViewController as? UINavigationController {
+                            navigationController.popToRootViewController(animated: true)
+                        } else {
+                            // NavigationStack yoksa mevcut görünümleri kapat
+                            rootViewController.dismiss(animated: true)
+                        }
+                    }
+                }
+                #endif
+            }
         }
     }
     
@@ -164,7 +288,12 @@ struct CourseListView: View {
         isLoading = true
         errorMessage = nil
         
-        APIService.shared.getCourses(studentId: user.studentNumber) { result in
+        // Seçilen bölüm bilgisini API çağrısına ekle
+        APIService.shared.getCourses(
+            studentId: user.studentNumber,
+            search: searchText.isEmpty ? nil : searchText,
+            department: selectedDepartment
+        ) { result in
             isLoading = false
             
             switch result {
@@ -179,11 +308,13 @@ struct CourseListView: View {
                     modelContext.insert(course)
                 }
                 
-                // Bölümleri güncelle - API'den gelen bölüm listesini kullan
-                departments = fetchedDepartments
+                // Bölüm listesini güncelle (eğer API'den bölüm listesi geliyorsa)
+                if !fetchedDepartments.isEmpty {
+                    self.departments = fetchedDepartments
+                }
                 
                 // Eğer seçili bölüm artık mevcut değilse, seçimi temizle
-                if let selectedDepartment = selectedDepartment, !fetchedDepartments.contains(selectedDepartment) {
+                if let selectedDepartment = selectedDepartment, !departments.contains(selectedDepartment) {
                     self.selectedDepartment = nil
                 }
                 
@@ -236,24 +367,37 @@ struct CourseListView: View {
     }
     
     private func signOut() {
+        isLoading = true
+        
+        // Microsoft ile giriş yapmış kullanıcılar için Microsoft çıkış işlemi
+        // Demo kullanıcılar için doğrudan UserDefaults güncellemesi
         MicrosoftAuthManager.shared.signOut { success in
-            if success {
-                // UserDefaults'taki oturum durumunu güncelle
-                // Bu değişim Social_UniversityApp tarafından izleniyor 
-                // ve otomatik olarak giriş ekranına yönlendiriliyor
-                DispatchQueue.main.async {
-                    isAuthenticated = false
-                    UserDefaults.standard.synchronize() // Değişiklikleri hemen kaydet
-                    
-                    // Aktif tüm görünümleri kapatıp, ana görünüme dön
-                    if let window = UIApplication.shared.windows.first,
-                       let rootViewController = window.rootViewController {
-                        // Tüm açık viewController'ları kapat
-                        rootViewController.dismiss(animated: true)
-                    }
-                }
-            } else {
-                errorMessage = "Çıkış yapılırken bir hata oluştu. Lütfen tekrar deneyin."
+            self.isLoading = false
+            
+            // Tüm verileri temizle ve giriş ekranına dön
+            DispatchQueue.main.async {
+                // Tüm kullanıcı bilgilerini temizle
+                UserDefaults.standard.removeObject(forKey: "selectedUniversity")
+                UserDefaults.standard.removeObject(forKey: "selectedDepartment")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userId")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userName")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userSurname")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userEmail")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userStudentNumber")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userDepartment")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userInfo")
+                
+                // Değişiklikleri hemen kaydet ve yayınla
+                UserDefaults.standard.synchronize()
+                
+                // Giriş durumunu false olarak ayarla - bu @AppStorage bağlı olduğundan Social_UniversityApp'i tetikleyecek
+                self.isAuthenticated = false
+                
+                // NotificationCenter aracılığıyla uygulama genelinde bildirim yayınla
+                NotificationCenter.default.post(name: NSNotification.Name("LogoutNotification"), object: nil)
+                
+                print("Çıkış yapıldı, login sayfasına yönlendiriliyor...")
             }
         }
     }

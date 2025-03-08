@@ -20,79 +20,89 @@ struct LoginView: View {
     @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
     @State private var currentUser: User?
     
+    // Demo kullanıcı için geçici yönlendirme kontrolü
+    @State private var shouldNavigateToUniversitySelection = false
+    
     var body: some View {
-        VStack(spacing: 30) {
-            // Başlık ve açıklama
-            VStack(spacing: 10) {
-                Image("AppLogo") // Logo ekleyebilirsiniz
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 120, height: 120)
-                
-                Text("Social University")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                Text("Üniversite hayatını keşfet, arkadaş edin, ders notlarını paylaş")
-                    .font(.subheadline)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            
-            Spacer()
-            
-            // Giriş bölümü
-            VStack(spacing: 20) {
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .padding()
-                } else if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .padding()
+        NavigationStack {
+            VStack(spacing: 30) {
+                // Başlık ve açıklama
+                VStack(spacing: 10) {
+                    Image("AppLogo") // Logo ekleyebilirsiniz
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
+                    
+                    Text("Social University")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Üniversite hayatını keşfet, arkadaş edin, ders notlarını paylaş")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
                 
-                Button(action: {
-                    signInWithMicrosoft()
-                }) {
-                    HStack {
-                        Image(systemName: "globe")
-                            .font(.title3)
-                        Text("Microsoft Hesabı ile Giriş Yap")
-                            .fontWeight(.semibold)
+                Spacer()
+                
+                // Giriş bölümü
+                VStack(spacing: 20) {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .padding()
+                    } else if let errorMessage = errorMessage {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                            .padding()
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                }
-                .disabled(isLoading)
-                
-                Text("veya")
-                    .foregroundColor(.secondary)
-                
-                Button(action: {
-                    createDemoUser()
-                }) {
-                    Text("Demo kullanıcı ile devam et")
-                        .underline()
+                    
+                    Button(action: {
+                        signInWithMicrosoft()
+                    }) {
+                        HStack {
+                            Image(systemName: "globe")
+                                .font(.title3)
+                            Text("Microsoft Hesabı ile Giriş Yap")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                    }
+                    .disabled(isLoading)
+                    
+                    Text("veya")
                         .foregroundColor(.secondary)
+                    
+                    Button(action: {
+                        createDemoUser()
+                    }) {
+                        Text("Demo kullanıcı ile devam et")
+                            .underline()
+                            .foregroundColor(.secondary)
+                    }
+                    .disabled(isLoading)
                 }
-                .disabled(isLoading)
+                .padding(.horizontal, 30)
+                
+                Spacer()
+                
+                // Alt bilgi
+                Text("© 2025 Social University Tüm Hakları Saklıdır")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom)
             }
-            .padding(.horizontal, 30)
-            
-            Spacer()
-            
-            // Alt bilgi
-            Text("© 2025 Social University Tüm Hakları Saklıdır")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.bottom)
+            .padding()
+            .navigationDestination(isPresented: $shouldNavigateToUniversitySelection) {
+                if let user = currentUser {
+                    UniversitySelectionView(user: user)
+                }
+            }
         }
-        .padding()
     }
     
     private func signInWithMicrosoft() {
@@ -128,7 +138,14 @@ struct LoginView: View {
                 
                 // Oturum durumunu güncelle ve kullanıcıyı kaydet
                 currentUser = user
+                
+                // AppStorage'daki oturum durumu değişkenini güncelle
                 isAuthenticated = true
+                
+                // Üniversite seçim sayfasına yönlendir
+                shouldNavigateToUniversitySelection = true
+                
+                print("Microsoft kullanıcısı ile giriş yapıldı: \(user.name)")
                 
             case .failure(let error):
                 errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
@@ -155,12 +172,27 @@ struct LoginView: View {
         // Örnek veriler oluştur
         createSampleData(for: demoUser)
         
-        // Gecikme ekleyerek bir giriş yapılıyormuş gibi hissettir
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            currentUser = demoUser
-            isAuthenticated = true
-            isLoading = false
-        }
+        // Kullanıcıyı ayarla
+        currentUser = demoUser
+        
+        // Demo kullanıcı bilgilerini UserDefaults'a kaydet
+        // Bu şekilde demo kullanıcı girişi de Microsoft kullanıcısı gibi davranabilir
+        UserDefaults.standard.set("demo-user-id", forKey: "com.socialuniversity.userId")
+        UserDefaults.standard.set("Demo", forKey: "com.socialuniversity.userName")
+        UserDefaults.standard.set("Kullanıcı", forKey: "com.socialuniversity.userSurname")
+        UserDefaults.standard.set("demo@university.edu.tr", forKey: "com.socialuniversity.userEmail")
+        UserDefaults.standard.set("123456", forKey: "com.socialuniversity.userStudentNumber")
+        UserDefaults.standard.set("Bilgisayar Mühendisliği", forKey: "com.socialuniversity.userDepartment")
+        UserDefaults.standard.set(true, forKey: "com.socialuniversity.isDemo")
+        
+        // AppStorage'daki oturum durumu değişkenini güncelle
+        isAuthenticated = true
+        
+        // Doğrudan üniversite seçim sayfasına yönlendir
+        shouldNavigateToUniversitySelection = true
+        
+        print("Demo kullanıcı ile giriş yapıldı.")
+        isLoading = false
     }
     
     private func createSampleData(for user: User) {
