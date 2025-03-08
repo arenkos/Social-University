@@ -12,10 +12,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.yourdomain.socialuniversity</string>
+			<string>AR-Software-Consultancy.Social-University</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.yourdomain.socialuniversity</string>
+				<string>msauth.AR-Software-Consultancy.Social-University</string>
 			</array>
 		</dict>
 	</array>

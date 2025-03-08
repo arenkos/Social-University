@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8CF993942D7BD21B005D399E /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 8CF993932D7BD21B005D399E /* MSAL */; };
+		8CF993972D7BD7B4005D399E /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8CF993962D7BD7B4005D399E /* UIKit.framework */; platformFilters = (ios, xros, ); };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8CF9934F2D7BB62F005D399E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,7 @@
 		8CF9933A2D7BB62D005D399E /* Social University.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Social University.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CF9934E2D7BB62F005D399E /* Social UniversityTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Social UniversityTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CF993582D7BB62F005D399E /* Social UniversityUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Social UniversityUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8CF993962D7BD7B4005D399E /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.2.sdk/System/Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -65,6 +71,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8CF993942D7BD21B005D399E /* MSAL in Frameworks */,
+				8CF993972D7BD7B4005D399E /* UIKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +99,7 @@
 				8CF9933C2D7BB62D005D399E /* Social University */,
 				8CF993512D7BB62F005D399E /* Social UniversityTests */,
 				8CF9935B2D7BB62F005D399E /* Social UniversityUITests */,
+				8CF993952D7BD7B4005D399E /* Frameworks */,
 				8CF9933B2D7BB62D005D399E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -103,6 +112,14 @@
 				8CF993582D7BB62F005D399E /* Social UniversityUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8CF993952D7BD7B4005D399E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8CF993962D7BD7B4005D399E /* UIKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -125,6 +142,7 @@
 			);
 			name = "Social University";
 			packageProductDependencies = (
+				8CF993932D7BD21B005D399E /* MSAL */,
 			);
 			productName = "Social University";
 			productReference = 8CF9933A2D7BB62D005D399E /* Social University.app */;
@@ -208,6 +226,9 @@
 			);
 			mainGroup = 8CF993312D7BB62C005D399E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8CF993922D7BD21B005D399E /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8CF9933B2D7BB62D005D399E /* Products */;
 			projectDirPath = "";
@@ -610,6 +631,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8CF993922D7BD21B005D399E /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8CF993932D7BD21B005D399E /* MSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8CF993922D7BD21B005D399E /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;
+			productName = MSAL;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8CF993322D7BB62C005D399E /* Project object */;
 }

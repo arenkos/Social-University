@@ -14,87 +14,37 @@ import SwiftData
 class APIService {
     static let shared = APIService()
     
-    private let baseURL = "https://your-server.com/api" // Sunucu adresinizi buraya yazın
+    private let baseURL = "https://aryazilimdanismanlik.com/social" // Sunucu adresi
     private let session = URLSession.shared
     
     private init() {}
     
     // MARK: - Kullanıcı İşlemleri
     
-    func login(email: String, completion: @escaping (Result<Social_University.User, Error>) -> Void) {
-        let url = URL(string: "\(baseURL)/login.php")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+    func login(userInfo: MicrosoftAuthManager.UserInfo, completion: @escaping (Result<Social_University.User, Error>) -> Void) {
+        // Microsoft kimlik doğrulama ile alınan bilgileri kullanarak kullanıcı oluştur
+        let user = Social_University.User(
+            id: userInfo.id,
+            email: userInfo.email,
+            name: userInfo.name,
+            surname: userInfo.surname,
+            studentNumber: userInfo.studentNumber,
+            department: userInfo.department
+        )
         
-        let body: [String: Any] = ["email": email]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
-        let task = session.dataTask(with: request) { data, response, error in
-            if let error = error {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
-            
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
-                }
-                return
-            }
-            
-            do {
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                
-                guard let status = json?["status"] as? Bool, status else {
-                    let message = json?["message"] as? String ?? "Bilinmeyen hata"
-                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
-                }
-                
-                guard let userData = json?["data"] as? [String: Any],
-                      let userInfo = userData["user"] as? [String: Any],
-                      let id = userInfo["id"] as? String,
-                      let email = userInfo["email"] as? String,
-                      let name = userInfo["name"] as? String,
-                      let surname = userInfo["surname"] as? String,
-                      let studentNumber = userInfo["studentNumber"] as? String,
-                      let department = userInfo["department"] as? String else {
-                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Kullanıcı bilgileri alınamadı"])
-                }
-                
-                let user = Social_University.User(
-                    id: id,
-                    email: email,
-                    name: name,
-                    surname: surname,
-                    studentNumber: studentNumber,
-                    department: department
-                )
-                
-                DispatchQueue.main.async {
-                    completion(.success(user))
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-            }
-        }
-        
-        task.resume()
+        // Başarılı yanıt döndür
+        completion(.success(user))
     }
     
     // MARK: - Ders İşlemleri
     
-    func getCourses(userId: String? = nil, search: String? = nil, department: String? = nil, completion: @escaping (Result<([Social_University.Course], [String]), Error>) -> Void) {
-        var urlComponents = URLComponents(string: "\(baseURL)/courses.php")!
+    func getCourses(studentId: String? = nil, search: String? = nil, department: String? = nil, completion: @escaping (Result<([Social_University.Course], [String]), Error>) -> Void) {
+        var urlComponents = URLComponents(string: "\(baseURL)/get_courses.php")!
         
         var queryItems: [URLQueryItem] = []
         
-        if let userId = userId {
-            queryItems.append(URLQueryItem(name: "user_id", value: userId))
+        if let studentId = studentId {
+            queryItems.append(URLQueryItem(name: "student_id", value: studentId))
         }
         
         if let search = search, !search.isEmpty {
@@ -141,18 +91,21 @@ class APIService {
                 var courses: [Social_University.Course] = []
                 
                 for courseData in coursesData {
-                    guard let id = courseData["id"] as? String,
-                          let courseCode = courseData["course_code"] as? String,
+                    guard let courseCode = courseData["course_code"] as? String,
                           let courseName = courseData["course_name"] as? String,
-                          let departmentName = courseData["department_name"] as? String else {
+                          let departmentName = courseData["course_department"] as? String else {
                         continue
                     }
                     
+                    // Öğrencinin derse kayıtlı olup olmadığını kontrol et
+                    let isEnrolled = courseData["is_enrolled"] as? Bool ?? false
+                    
                     let course = Social_University.Course(
-                        id: id,
+                        id: courseCode, // Ders kodu aynı zamanda ID olarak kullanılıyor
                         courseCode: courseCode,
                         courseName: courseName,
-                        departmentName: departmentName
+                        departmentName: departmentName,
+                        isEnrolled: isEnrolled
                     )
                     
                     courses.append(course)
@@ -171,15 +124,15 @@ class APIService {
         task.resume()
     }
     
-    func enrollCourse(userId: String, courseId: String, action: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        let url = URL(string: "\(baseURL)/enroll.php")!
+    func enrollCourse(studentId: String, courseCode: String, action: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        let url = URL(string: "\(baseURL)/update_enrollment.php")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: Any] = [
-            "user_id": userId,
-            "course_id": courseId,
+            "student_id": studentId,
+            "course_code": courseCode,
             "action": action // "enroll" veya "unenroll"
         ]
         
@@ -223,16 +176,12 @@ class APIService {
     
     // MARK: - Mesaj İşlemleri
     
-    func getMessages(courseId: String, lastId: String? = nil, completion: @escaping (Result<[Social_University.Message], Error>) -> Void) {
+    func getMessages(courseCode: String, completion: @escaping (Result<[Social_University.Message], Error>) -> Void) {
         var urlComponents = URLComponents(string: "\(baseURL)/messages.php")!
         
-        var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "course_id", value: courseId)
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "course_code", value: courseCode)
         ]
-        
-        if let lastId = lastId {
-            queryItems.append(URLQueryItem(name: "last_id", value: lastId))
-        }
         
         urlComponents.queryItems = queryItems
         
@@ -270,9 +219,9 @@ class APIService {
                 
                 for messageData in messagesData {
                     guard let id = messageData["id"] as? String,
-                          let content = messageData["content"] as? String,
+                          let content = messageData["message"] as? String,
                           let timestampString = messageData["timestamp"] as? String,
-                          let courseId = messageData["course_id"] as? String else {
+                          let courseCode = messageData["course_code"] as? String else {
                         continue
                     }
                     
@@ -280,14 +229,14 @@ class APIService {
                     dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
                     let timestamp = dateFormatter.date(from: timestampString) ?? Date()
                     
-                    let senderId = messageData["sender_id"] as? String
+                    let senderId = messageData["student_id"] as? String
                     
                     let message = Social_University.Message(
                         id: id,
                         content: content,
                         timestamp: timestamp,
                         senderId: senderId,
-                        courseId: courseId
+                        courseId: courseCode
                     )
                     
                     messages.append(message)
@@ -306,19 +255,19 @@ class APIService {
         task.resume()
     }
     
-    func sendMessage(courseId: String, content: String, senderId: String?, completion: @escaping (Result<Social_University.Message, Error>) -> Void) {
+    func sendMessage(courseCode: String, message: String, studentId: String?, completion: @escaping (Result<Social_University.Message, Error>) -> Void) {
         let url = URL(string: "\(baseURL)/messages.php")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         var body: [String: Any] = [
-            "course_id": courseId,
-            "content": content
+            "course_code": courseCode,
+            "message": message
         ]
         
-        if let senderId = senderId {
-            body["sender_id"] = senderId
+        if let studentId = studentId {
+            body["student_id"] = studentId
         }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -349,9 +298,9 @@ class APIService {
                 guard let responseData = json?["data"] as? [String: Any],
                       let messageData = responseData["message"] as? [String: Any],
                       let id = messageData["id"] as? String,
-                      let content = messageData["content"] as? String,
+                      let content = messageData["message"] as? String,
                       let timestampString = messageData["timestamp"] as? String,
-                      let courseId = messageData["course_id"] as? String else {
+                      let courseCode = messageData["course_code"] as? String else {
                     throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Mesaj bilgileri alınamadı"])
                 }
                 
@@ -359,14 +308,14 @@ class APIService {
                 dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
                 let timestamp = dateFormatter.date(from: timestampString) ?? Date()
                 
-                let senderId = messageData["sender_id"] as? String
+                let senderId = messageData["student_id"] as? String
                 
                 let message = Social_University.Message(
                     id: id,
                     content: content,
                     timestamp: timestamp,
                     senderId: senderId,
-                    courseId: courseId
+                    courseId: courseCode
                 )
                 
                 DispatchQueue.main.async {

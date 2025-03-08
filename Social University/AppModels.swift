@@ -28,12 +28,14 @@ public final class Course {
     public var courseCode: String
     public var courseName: String
     public var departmentName: String
+    public var isEnrolled: Bool?
     
-    public init(id: String, courseCode: String, courseName: String, departmentName: String) {
+    public init(id: String, courseCode: String, courseName: String, departmentName: String, isEnrolled: Bool? = nil) {
         self.id = id
         self.courseCode = courseCode
         self.courseName = courseName
         self.departmentName = departmentName
+        self.isEnrolled = isEnrolled
     }
 }
 

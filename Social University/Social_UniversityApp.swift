@@ -17,9 +17,9 @@ struct Social_UniversityApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LoginView()
+                .modelContainer(for: [User.self, Course.self, Message.self, Item.self])
         }
-        .modelContainer(for: [User.self, Course.self, Message.self, Item.self])
     }
 }
 

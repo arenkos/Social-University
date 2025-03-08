@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+// MSAL kütüphanesini import ediyoruz
+import MSAL
 
 #if canImport(UIKit)
 import UIKit
@@ -12,15 +14,20 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     
     // Microsoft kimlik doğrulama için URL şema işlemleri
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // MSAL kütüphanesi entegre edildiğinde burada URL işlemleri yapılacak
-        // Şimdilik true döndürüyoruz
+        // MSAL kütüphanesi ile URL işlemleri
+        print("URL şeması işleniyor: \(url)")
         
-        print("Received URL: \(url)")
+        // URL'nin doğru formatta olup olmadığını kontrol et
+        guard url.scheme?.lowercased().hasPrefix("msauth") == true else {
+            print("Geçersiz URL şeması: \(url.scheme ?? "nil")")
+            return false
+        }
         
-        // MSAL entegre edildiğinde aşağıdaki gibi olacak:
-        // return MSALPublicClientApplication.handleMSALResponse(url, sourceApplication: options[UIApplication.OpenURLOptionsKey.sourceApplication] as? String)
+        // MSAL kütüphanesine URL'yi işlemesi için gönder
+        let result = MSALPublicClientApplication.handleMSALResponse(url, sourceApplication: options[UIApplication.OpenURLOptionsKey.sourceApplication] as? String)
         
-        return true
+        print("MSAL URL işleme sonucu: \(result)")
+        return result
     }
 }
 #endif 

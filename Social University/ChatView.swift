@@ -26,6 +26,8 @@ struct ChatView: View {
     
     @State private var messageText = ""
     @State private var scrollToBottom = false
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     @FocusState private var isTextFieldFocused: Bool
     
     init(user: User, course: Course) {
@@ -42,52 +44,59 @@ struct ChatView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Sohbet başlığı
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(course.courseName)
-                        .font(.headline)
-                    Text(course.courseCode)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        VStack {
+            if isLoading {
+                ProgressView()
+                    .padding()
+            } else if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .padding()
+            } else if messages.isEmpty {
+                VStack {
+                    Spacer()
+                    Text("Henüz mesaj yok")
+                        .foregroundColor(.gray)
+                    Spacer()
                 }
-                Spacer()
-            }
-            .padding()
-            .background(Color.gray.opacity(0.1))
-            
-            // Mesaj listesi
-            ScrollViewReader { scrollView in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(messages) { message in
-                            MessageBubble(message: message, isCurrentUser: message.senderId == user.id, user: user)
-                                .id(message.id)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(messages) { message in
+                                MessageBubble(message: message, isCurrentUser: message.senderId == user.studentNumber)
+                                    .id(message.id)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                    }
+                    .onChange(of: messages.count) {
+                        if scrollToBottom {
+                            if let lastMessage = messages.last {
+                                withAnimation {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
+                            }
+                            scrollToBottom = false
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                }
-                .onChange(of: messages.count) { _, _ in
-                    scrollToBottom = true
-                }
-                .onChange(of: scrollToBottom) { _, newValue in
-                    if newValue, let lastMessage = messages.last {
-                        withAnimation {
-                            scrollView.scrollTo(lastMessage.id, anchor: .bottom)
+                    .onChange(of: scrollToBottom) {
+                        if scrollToBottom, let lastMessage = messages.last {
+                            withAnimation {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
                         }
-                        scrollToBottom = false
                     }
-                }
-                .onAppear {
-                    if let lastMessage = messages.last {
-                        scrollView.scrollTo(lastMessage.id, anchor: .bottom)
+                    .onAppear {
+                        loadMessages()
+                        if let lastMessage = messages.last {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
                     }
                 }
             }
             
-            // Mesaj giriş alanı
             HStack {
                 TextField("Mesajınızı yazın...", text: $messageText)
                     .padding(10)
@@ -106,9 +115,33 @@ struct ChatView: View {
             .shadow(radius: 1)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if messages.isEmpty {
-                addSampleMessages()
+        .navigationTitle(course.courseName)
+    }
+    
+    private func loadMessages() {
+        isLoading = true
+        errorMessage = nil
+        
+        APIService.shared.getMessages(courseCode: course.courseCode) { result in
+            isLoading = false
+            
+            switch result {
+            case .success(let fetchedMessages):
+                // Mevcut mesajları temizle
+                for message in messages {
+                    modelContext.delete(message)
+                }
+                
+                // Yeni mesajları ekle
+                for message in fetchedMessages {
+                    modelContext.insert(message)
+                }
+                
+                // Otomatik kaydırma
+                scrollToBottom = true
+                
+            case .failure(let error):
+                errorMessage = "Mesajlar yüklenemedi: \(error.localizedDescription)"
             }
         }
     }
@@ -117,56 +150,30 @@ struct ChatView: View {
         let trimmedText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         
         if !trimmedText.isEmpty {
-            let newMessage = Message(
-                id: UUID().uuidString,
-                content: trimmedText,
-                timestamp: Date(),
-                senderId: user.id,
-                courseId: course.id
-            )
+            isLoading = true
+            errorMessage = nil
             
-            modelContext.insert(newMessage)
-            messageText = ""
-            scrollToBottom = true
-        }
-    }
-    
-    private func addSampleMessages() {
-        // Örnek mesajlar ekle
-        let sampleMessages = [
-            Message(
-                id: UUID().uuidString,
-                content: "Merhaba, bu derse hoş geldiniz!",
-                timestamp: Date().addingTimeInterval(-3600 * 24),
-                senderId: nil,
-                courseId: course.id
-            ),
-            Message(
-                id: UUID().uuidString,
-                content: "Ödev teslim tarihi ne zaman?",
-                timestamp: Date().addingTimeInterval(-3600 * 12),
-                senderId: user.id,
-                courseId: course.id
-            ),
-            Message(
-                id: UUID().uuidString,
-                content: "Ödevler gelecek hafta Cuma günü teslim edilecek.",
-                timestamp: Date().addingTimeInterval(-3600 * 6),
-                senderId: nil,
-                courseId: course.id
-            )
-        ]
-        
-        for message in sampleMessages {
-            modelContext.insert(message)
+            APIService.shared.sendMessage(courseCode: course.courseCode, message: trimmedText, studentId: user.studentNumber) { result in
+                isLoading = false
+                
+                switch result {
+                case .success(let newMessage):
+                    // Yeni mesajı ekle
+                    modelContext.insert(newMessage)
+                    messageText = ""
+                    scrollToBottom = true
+                    
+                case .failure(let error):
+                    errorMessage = "Mesaj gönderilemedi: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }
 
 struct MessageBubble: View {
-    var message: Message
-    var isCurrentUser: Bool
-    var user: User
+    let message: Message
+    let isCurrentUser: Bool
     
     var body: some View {
         HStack {
@@ -174,33 +181,30 @@ struct MessageBubble: View {
                 Spacer()
             }
             
-            VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: 2) {
-                if let _ = message.senderId {
-                    Text(isCurrentUser ? "\(user.name) \(user.surname)" : "Diğer Kullanıcı")
-                        .font(.caption)
-                        .foregroundColor(isCurrentUser ? .white.opacity(0.8) : .black.opacity(0.8))
-                } else {
-                    Text("Sistem")
-                        .font(.caption)
-                        .foregroundColor(isCurrentUser ? .white.opacity(0.8) : .black.opacity(0.8))
-                }
-                
+            VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: 4) {
                 Text(message.content)
                     .padding(10)
                     .background(isCurrentUser ? Color.blue : Color.gray.opacity(0.2))
                     .foregroundColor(isCurrentUser ? .white : .black)
                     .cornerRadius(16)
                 
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                Text(formatDate(message.timestamp))
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 8)
             }
             
             if !isCurrentUser {
                 Spacer()
             }
         }
-        .padding(.vertical, 4)
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

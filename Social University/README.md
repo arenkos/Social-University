@@ -16,7 +16,7 @@ Aşağıdaki dosyalar oluşturuldu veya güncellendi:
 4. **AppDelegate.swift**: URL şema işlemleri için gerekli sınıf.
 5. **Info.plist**: URL şemaları için gerekli yapılandırma.
 
-## Tamamlanması Gereken Adımlar
+## Microsoft Kimlik Doğrulama Entegrasyonu Adımları
 
 ### 1. Microsoft Azure Portal'da Uygulama Kaydı
 
@@ -40,50 +40,70 @@ Aşağıdaki dosyalar oluşturuldu veya güncellendi:
 1. `MicrosoftAuthManager.swift` dosyasını açın.
 2. `clientId` değişkenini Azure Portal'dan aldığınız "Uygulama (istemci) Kimliği" ile güncelleyin.
 3. `redirectUri` değişkenini kendi uygulama kimliğinizle güncelleyin.
+4. Yorum satırı olarak eklenmiş MSAL kodlarını etkinleştirin.
 
-### 4. MSAL Entegrasyonu
+### 4. Info.plist Dosyasını Güncelleme
 
-MSAL paketini ekledikten sonra, `MicrosoftAuthManager.swift` dosyasını güncelleyin:
+Info.plist dosyasında aşağıdaki değerleri güncelleyin:
 
-1. `import MSAL` ifadesini ekleyin.
-2. `initMSAL()` fonksiyonunu çağırın.
-3. `signIn()` ve `signOut()` fonksiyonlarını MSAL kullanacak şekilde güncelleyin.
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>com.yourdomain.socialuniversity</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>msauth.com.yourdomain.socialuniversity</string>
+        </array>
+    </dict>
+</array>
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>msauthv2</string>
+    <string>msauthv3</string>
+</array>
+```
 
-## Örnek Kod
+### 5. AppDelegate.swift Dosyasını Güncelleme
+
+`AppDelegate.swift` dosyasında URL şema işlemlerini etkinleştirin:
 
 ```swift
-// MicrosoftAuthManager.swift dosyasında:
-
-import MSAL
-
-private var application: MSALPublicClientApplication?
-
-private func initMSAL() {
-    let authority = "\(authority)/organizations"
-    let msalConfiguration = MSALPublicClientApplicationConfig(clientId: clientId, redirectUri: redirectUri, authority: authority)
+func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    // MSAL kütüphanesi entegre edildiğinde yorum satırını kaldırın
+    // return MSALPublicClientApplication.handleMSALResponse(url, sourceApplication: options[UIApplication.OpenURLOptionsKey.sourceApplication] as? String)
     
-    do {
-        application = try MSALPublicClientApplication(configuration: msalConfiguration)
-    } catch {
-        print("MSAL başlatma hatası: \(error)")
-    }
+    return true
 }
 ```
+
+## Microsoft Kimlik Doğrulama Akışı
+
+1. Kullanıcı "Microsoft ile Giriş Yap" düğmesine tıklar.
+2. MSAL kütüphanesi, kullanıcıyı Microsoft kimlik doğrulama sayfasına yönlendirir.
+3. Kullanıcı Microsoft hesap bilgilerini girer.
+4. Başarılı kimlik doğrulama sonrasında, kullanıcı uygulamaya geri yönlendirilir.
+5. MSAL kütüphanesi, erişim belirtecini (access token) alır.
+6. Uygulama, Microsoft Graph API'yi kullanarak kullanıcı bilgilerini alır.
+7. Kullanıcı bilgileri, uygulamada kaydedilir ve kullanıcı giriş yapmış olur.
 
 ## Sorun Giderme
 
 Eğer kimlik doğrulama sırasında sorunlar yaşıyorsanız:
 
-1. Info.plist dosyasındaki URL şemalarının doğru olduğundan emin olun.
-2. Azure Portal'daki yönlendirme URI'sinin uygulama içindeki URI ile eşleştiğini kontrol edin.
-3. Xcode konsolunda hata mesajlarını kontrol edin.
+1. Azure Portal'da uygulama kaydınızı kontrol edin.
+2. Yönlendirme URI'sinin doğru olduğundan emin olun.
+3. Info.plist dosyasındaki URL şemalarının doğru olduğundan emin olun.
+4. Xcode konsolunda hata mesajlarını kontrol edin.
 
 ## Daha Fazla Bilgi
 
-Microsoft kimlik doğrulama hakkında daha fazla bilgi için:
-
 - [Microsoft Authentication Library (MSAL) for iOS](https://github.com/AzureAD/microsoft-authentication-library-for-objc)
 - [Microsoft Graph API Documentation](https://docs.microsoft.com/en-us/graph/overview)
+- [Azure Active Directory Authentication](https://docs.microsoft.com/en-us/azure/active-directory/develop/)
 
 ## Uygulama Özellikleri
 

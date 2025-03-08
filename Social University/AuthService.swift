@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import UIKit
 
 // Microsoft kimlik doğrulama için gerekli kütüphaneleri ekleyeceğiz
 // Bu dosya Microsoft API ile kimlik doğrulama işlemlerini yönetecek
@@ -30,11 +31,12 @@ public class AuthService: ObservableObject {
     }
     
     // Microsoft ile giriş işlemi
-    public func signInWithMicrosoft() {
+    public func signInWithMicrosoft(from viewController: UIViewController) {
         isLoading = true
         errorMessage = nil
         
-        MicrosoftAuthManager.shared.signIn { [weak self] result in
+        // Gerçek Microsoft kimlik doğrulama işlemi için MicrosoftAuthManager'ı kullan
+        MicrosoftAuthManager.shared.signIn(viewController: viewController) { [weak self] result in
             guard let self = self else { return }
             
             DispatchQueue.main.async {
@@ -56,6 +58,14 @@ public class AuthService: ObservableObject {
             self.errorMessage = "Model context bulunamadı"
             return
         }
+        
+        // Başarılı giriş bilgilerini göster
+        /*
+        print("Giriş başarılı! Kullanıcı: \(userInfo.name) \(userInfo.surname)")
+        print("E-posta: \(userInfo.email)")
+        print("Öğrenci Numarası: \(userInfo.studentNumber)")
+        print("Bölüm: \(userInfo.department)")
+        */
         
         // Kullanıcı zaten var mı kontrol et
         let userIdToFind = userInfo.id
@@ -79,6 +89,7 @@ public class AuthService: ObservableObject {
                 
                 modelContext.insert(newUser)
                 self.currentUser = newUser
+                print("Yeni kullanıcı oluşturuldu: \(newUser.name) \(newUser.surname)")
             } else if let existingUser = existingUsers.first {
                 // Mevcut kullanıcıyı güncelle
                 existingUser.email = userInfo.email
@@ -88,8 +99,11 @@ public class AuthService: ObservableObject {
                 existingUser.department = userInfo.department
                 
                 self.currentUser = existingUser
+                print("Mevcut kullanıcı güncellendi: \(existingUser.name) \(existingUser.surname)")
             }
             
+            // Kullanıcı kimlik doğrulamasını tamamla ve ders listesine yönlendir
+            print("Kimlik doğrulama tamamlandı. Ders listesine yönlendiriliyor...")
             self.isAuthenticated = true
         } catch {
             self.errorMessage = "Kullanıcı kontrolü sırasında hata: \(error.localizedDescription)"

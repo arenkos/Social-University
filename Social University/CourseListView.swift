@@ -21,6 +21,8 @@ struct CourseListView: View {
     @State private var searchText = ""
     @State private var selectedDepartment: String?
     @State private var departments: [String] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     
     var filteredCourses: [Course] {
         courses.filter { course in
@@ -36,131 +38,209 @@ struct CourseListView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            VStack {
-                // Arama ve Filtreleme Alanı
-                VStack(spacing: 10) {
-                    TextField("Ders Ara", text: $searchText)
-                        .padding(10)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(8)
-                        .padding(.horizontal)
-                    
-                    Picker("Bölüm", selection: $selectedDepartment) {
-                        Text("Tüm Bölümler").tag(nil as String?)
-                        ForEach(departments, id: \.self) { department in
-                            Text(department).tag(department as String?)
+        VStack {
+            // Arama ve filtreleme
+            VStack(spacing: 10) {
+                TextField("Ders ara...", text: $searchText)
+                    .padding(8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                
+                if !departments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            Button(action: {
+                                selectedDepartment = nil
+                            }) {
+                                Text("Tümü")
+                                    .padding(.vertical, 5)
+                                    .padding(.horizontal, 10)
+                                    .background(selectedDepartment == nil ? Color.blue : Color.gray.opacity(0.2))
+                                    .foregroundColor(selectedDepartment == nil ? .white : .primary)
+                                    .cornerRadius(15)
+                            }
+                            
+                            ForEach(departments, id: \.self) { department in
+                                Button(action: {
+                                    selectedDepartment = department
+                                }) {
+                                    Text(department)
+                                        .padding(.vertical, 5)
+                                        .padding(.horizontal, 10)
+                                        .background(selectedDepartment == department ? Color.blue : Color.gray.opacity(0.2))
+                                        .foregroundColor(selectedDepartment == department ? .white : .primary)
+                                        .cornerRadius(15)
+                                }
+                            }
                         }
                     }
-                    .pickerStyle(MenuPickerStyle())
-                    .padding(.horizontal)
                 }
-                .padding(.vertical)
-                .shadow(radius: 1)
+            }
+            .padding()
+            
+            if isLoading {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else if let errorMessage = errorMessage {
+                Spacer()
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding()
                 
-                // Ders Listesi
+                Button("Yeniden Dene") {
+                    loadCourses()
+                }
+                .padding()
+                Spacer()
+            } else if filteredCourses.isEmpty {
+                Spacer()
+                Text(searchText.isEmpty && selectedDepartment == nil ? "Henüz ders yok" : "Arama kriterlerine uygun ders bulunamadı")
+                    .foregroundColor(.gray)
+                Spacer()
+            } else {
                 List {
                     ForEach(filteredCourses) { course in
                         NavigationLink(destination: ChatView(user: user, course: course)) {
-                            CourseRow(course: course, user: user, modelContext: modelContext)
+                            CourseRow(course: course, isEnrolled: isEnrolled(course: course))
+                        }
+                        .swipeActions {
+                            if isEnrolled(course: course) {
+                                Button(role: .destructive) {
+                                    unenrollCourse(course: course)
+                                } label: {
+                                    Label("Ayrıl", systemImage: "person.fill.xmark")
+                                }
+                            } else {
+                                Button {
+                                    enrollCourse(course: course)
+                                } label: {
+                                    Label("Katıl", systemImage: "person.fill.badge.plus")
+                                }
+                                .tint(.green)
+                            }
                         }
                     }
                 }
-                .listStyle(PlainListStyle())
             }
-            .navigationTitle("Dersler")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        // Örnek ders ekle
-                        addSampleCourses()
-                    }) {
-                        Image(systemName: "plus")
-                    }
+        }
+        .navigationTitle("Dersler")
+        .onAppear {
+            loadCourses()
+        }
+        .refreshable {
+            loadCourses()
+        }
+    }
+    
+    private func loadCourses() {
+        isLoading = true
+        errorMessage = nil
+        
+        APIService.shared.getCourses(studentId: user.studentNumber) { result in
+            isLoading = false
+            
+            switch result {
+            case .success(let (fetchedCourses, fetchedDepartments)):
+                // Mevcut dersleri temizle
+                for course in courses {
+                    modelContext.delete(course)
                 }
-            }
-            .onAppear {
-                loadDepartments()
-                if courses.isEmpty {
-                    addSampleCourses()
+                
+                // Yeni dersleri ekle
+                for course in fetchedCourses {
+                    modelContext.insert(course)
                 }
+                
+                // Bölümleri güncelle - API'den gelen bölüm listesini kullan
+                departments = fetchedDepartments
+                
+                // Eğer seçili bölüm artık mevcut değilse, seçimi temizle
+                if let selectedDepartment = selectedDepartment, !fetchedDepartments.contains(selectedDepartment) {
+                    self.selectedDepartment = nil
+                }
+                
+            case .failure(let error):
+                errorMessage = "Dersler yüklenemedi: \(error.localizedDescription)"
             }
         }
     }
     
-    private func loadDepartments() {
-        // Tüm bölümleri kurslardan çıkar
-        let allDepartments = Set(courses.map { $0.departmentName })
-        departments = Array(allDepartments).sorted()
+    private func isEnrolled(course: Course) -> Bool {
+        // API'den gelen bilgiye göre derse kayıtlı olup olmadığını kontrol et
+        // Bu bilgi course nesnesinde saklanabilir
+        return course.isEnrolled ?? false
     }
     
-    private func addSampleCourses() {
-        let sampleCourses = [
-            Course(id: UUID().uuidString, courseCode: "BIL101", courseName: "Bilgisayar Programlama", departmentName: "Bilgisayar Mühendisliği"),
-            Course(id: UUID().uuidString, courseCode: "BIL203", courseName: "Veri Yapıları", departmentName: "Bilgisayar Mühendisliği"),
-            Course(id: UUID().uuidString, courseCode: "MAT101", courseName: "Kalkülüs I", departmentName: "Matematik"),
-            Course(id: UUID().uuidString, courseCode: "FIZ101", courseName: "Fizik I", departmentName: "Fizik"),
-            Course(id: UUID().uuidString, courseCode: "ENG101", courseName: "İngilizce I", departmentName: "Yabancı Diller")
-        ]
+    private func enrollCourse(course: Course) {
+        isLoading = true
+        errorMessage = nil
         
-        for course in sampleCourses {
-            modelContext.insert(course)
+        APIService.shared.enrollCourse(studentId: user.studentNumber, courseCode: course.courseCode, action: "enroll") { result in
+            isLoading = false
+            
+            switch result {
+            case .success:
+                // Dersleri yeniden yükle
+                loadCourses()
+                
+            case .failure(let error):
+                errorMessage = "Derse katılınamadı: \(error.localizedDescription)"
+            }
         }
+    }
+    
+    private func unenrollCourse(course: Course) {
+        isLoading = true
+        errorMessage = nil
         
-        // Bölümleri güncelle
-        loadDepartments()
+        APIService.shared.enrollCourse(studentId: user.studentNumber, courseCode: course.courseCode, action: "unenroll") { result in
+            isLoading = false
+            
+            switch result {
+            case .success:
+                // Dersleri yeniden yükle
+                loadCourses()
+                
+            case .failure(let error):
+                errorMessage = "Dersten ayrılınamadı: \(error.localizedDescription)"
+            }
+        }
     }
 }
 
 struct CourseRow: View {
-    var course: Course
-    var user: User
-    var modelContext: ModelContext
-    
-    @State private var isEnrolled: Bool = false
+    let course: Course
+    let isEnrolled: Bool
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
                 Text(course.courseCode)
                     .font(.headline)
-                Text(course.courseName)
-                    .font(.subheadline)
-                Text(course.departmentName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if isEnrolled {
+                    Text("Kayıtlı")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
             }
             
-            Spacer()
+            Text(course.courseName)
+                .font(.subheadline)
             
-            Button(action: {
-                toggleEnrollment()
-            }) {
-                Text(isEnrolled ? "Ayrıl" : "Katıl")
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(isEnrolled ? Color.red : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-            }
+            Text(course.departmentName)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding(.vertical, 4)
-        .onAppear {
-            checkEnrollmentStatus()
-        }
-    }
-    
-    private func checkEnrollmentStatus() {
-        // Burada API ile kullanıcının derse kayıtlı olup olmadığını kontrol edebilirsiniz
-        // Bu örnek için basit bir simülasyon yapıyoruz
-        isEnrolled = false
-    }
-    
-    private func toggleEnrollment() {
-        // Burada API ile kullanıcının derse kaydını değiştirebilirsiniz
-        // Bu örnek için basit bir simülasyon yapıyoruz
-        isEnrolled.toggle()
     }
 }
 
