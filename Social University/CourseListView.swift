@@ -23,6 +23,13 @@ struct CourseListView: View {
     @State private var departments: [String] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showingLogoutAlert = false
+    
+    // Uygulama genelinde oturum durumunu takip eden değişkenlere erişim
+    @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
+    
+    // Oturum durumunu güncelleyebilmek için Environment değişkeni
+    @Environment(\.presentationMode) private var presentationMode
     
     var filteredCourses: [Course] {
         courses.filter { course in
@@ -126,6 +133,25 @@ struct CourseListView: View {
             }
         }
         .navigationTitle("Dersler")
+        .navigationBarBackButtonHidden(true) // Geri dönüş butonunu gizle
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showingLogoutAlert = true
+                }) {
+                    Text("Çıkış Yap")
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .alert("Çıkış yapmak istiyor musunuz?", isPresented: $showingLogoutAlert) {
+            Button("İptal", role: .cancel) {}
+            Button("Çıkış Yap", role: .destructive) {
+                signOut()
+            }
+        } message: {
+            Text("Çıkış yaptığınızda oturumunuz sonlandırılacak ve giriş sayfasına yönlendirileceksiniz.")
+        }
         .onAppear {
             loadCourses()
         }
@@ -205,6 +231,29 @@ struct CourseListView: View {
                 
             case .failure(let error):
                 errorMessage = "Dersten ayrılınamadı: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    private func signOut() {
+        MicrosoftAuthManager.shared.signOut { success in
+            if success {
+                // UserDefaults'taki oturum durumunu güncelle
+                // Bu değişim Social_UniversityApp tarafından izleniyor 
+                // ve otomatik olarak giriş ekranına yönlendiriliyor
+                DispatchQueue.main.async {
+                    isAuthenticated = false
+                    UserDefaults.standard.synchronize() // Değişiklikleri hemen kaydet
+                    
+                    // Aktif tüm görünümleri kapatıp, ana görünüme dön
+                    if let window = UIApplication.shared.windows.first,
+                       let rootViewController = window.rootViewController {
+                        // Tüm açık viewController'ları kapat
+                        rootViewController.dismiss(animated: true)
+                    }
+                }
+            } else {
+                errorMessage = "Çıkış yapılırken bir hata oluştu. Lütfen tekrar deneyin."
             }
         }
     }

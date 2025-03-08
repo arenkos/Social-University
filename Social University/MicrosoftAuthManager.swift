@@ -8,7 +8,7 @@ import UIKit
 // Microsoft kimlik doğrulama için gerekli sınıf
 public class MicrosoftAuthManager {
     // Kullanıcı bilgilerini taşıyan yapı
-    public struct UserInfo {
+    public struct UserInfo: Codable {
         public let id: String
         public let email: String
         public let name: String
@@ -28,6 +28,10 @@ public class MicrosoftAuthManager {
     
     // Singleton örneği
     public static let shared = MicrosoftAuthManager()
+    
+    // UserDefaults için anahtarlar
+    private let userInfoKey = "com.socialuniversity.userInfo"
+    private let isAuthenticatedKey = "com.socialuniversity.isAuthenticated"
     
     // Microsoft uygulama kimlik bilgileri
     private let clientId = "c456eab1-fe61-4c7e-925e-e907e5ab07b8" // Microsoft Azure Portal'dan alınacak
@@ -69,6 +73,37 @@ public class MicrosoftAuthManager {
         }
     }
     
+    // Kullanıcının oturum açıp açmadığını kontrol et
+    public func isAuthenticated() -> Bool {
+        return UserDefaults.standard.bool(forKey: isAuthenticatedKey)
+    }
+    
+    // Kaydedilmiş kullanıcı bilgilerini getir
+    public func getSavedUserInfo() -> UserInfo? {
+        guard let data = UserDefaults.standard.data(forKey: userInfoKey) else {
+            return nil
+        }
+        
+        do {
+            let userInfo = try JSONDecoder().decode(UserInfo.self, from: data)
+            return userInfo
+        } catch {
+            print("Kullanıcı bilgileri çözülemedi: \(error)")
+            return nil
+        }
+    }
+    
+    // Kullanıcı bilgilerini kaydet
+    private func saveUserInfo(_ userInfo: UserInfo) {
+        do {
+            let data = try JSONEncoder().encode(userInfo)
+            UserDefaults.standard.set(data, forKey: userInfoKey)
+            UserDefaults.standard.set(true, forKey: isAuthenticatedKey)
+        } catch {
+            print("Kullanıcı bilgileri kaydedilemedi: \(error)")
+        }
+    }
+    
     // Microsoft ile giriş işlemi
     public func signIn(viewController: UIViewController, completion: @escaping (Result<UserInfo, Error>) -> Void) {
         // MSAL uygulamasını kontrol et
@@ -79,7 +114,16 @@ public class MicrosoftAuthManager {
         }
         
         // Doğrudan interaktif kimlik doğrulama kullan
-        acquireTokenInteractively(application: application, viewController: viewController, completion: completion)
+        acquireTokenInteractively(application: application, viewController: viewController) { result in
+            switch result {
+            case .success(let userInfo):
+                // Kullanıcı bilgilerini kaydet
+                self.saveUserInfo(userInfo)
+                completion(.success(userInfo))
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
     }
     
     // Sessiz kimlik doğrulama (token yenileme)
@@ -198,6 +242,7 @@ public class MicrosoftAuthManager {
             
             do {
                 let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+                
                 let id = json?["id"] as? String ?? ""
                 let email = (json?["mail"] as? String) ?? (json?["userPrincipalName"] as? String) ?? ""
                 let name = json?["givenName"] as? String ?? "Kullanıcı"
@@ -205,7 +250,7 @@ public class MicrosoftAuthManager {
                 
                 // Öğrenci numarası ve bölüm bilgisi için ek API çağrıları yapılabilir
                 let studentNumber = email.components(separatedBy: "@").first ?? ""
-                let department = json?["department"] as? String ?? "" // Varsayılan değer
+                let department = "Bilgisayar Mühendisliği" // Varsayılan değer
                 
                 let userInfo = UserInfo(
                     id: id,
@@ -217,7 +262,7 @@ public class MicrosoftAuthManager {
                 )
                 
                 DispatchQueue.main.async {
-                    //print("Kullanıcı bilgileri başarıyla alındı: \(name) \(surname) (\(email))")
+                    print("Kullanıcı bilgileri başarıyla alındı: \(name) \(surname) (\(email))")
                     completion(.success(userInfo))
                 }
             } catch {
@@ -229,7 +274,10 @@ public class MicrosoftAuthManager {
     // Microsoft ile çıkış işlemi
     public func signOut(completion: @escaping (Bool) -> Void) {
         guard let application = msalApplication else {
-            completion(false)
+            // UserDefaults'tan kullanıcı bilgilerini sil
+            UserDefaults.standard.removeObject(forKey: userInfoKey)
+            UserDefaults.standard.set(false, forKey: isAuthenticatedKey)
+            completion(true)
             return
         }
         
@@ -239,6 +287,11 @@ public class MicrosoftAuthManager {
                 try application.remove(account)
                 print("Microsoft hesabından başarıyla çıkış yapıldı")
             }
+            
+            // UserDefaults'tan kullanıcı bilgilerini sil
+            UserDefaults.standard.removeObject(forKey: userInfoKey)
+            UserDefaults.standard.set(false, forKey: isAuthenticatedKey)
+            
             completion(true)
         } catch {
             print("Çıkış yapılırken hata oluştu: \(error)")
