@@ -22,6 +22,11 @@ struct UniversitySelectionView: View {
     // Seçimi tamamladıktan sonra ders listesine geçiş için
     @State private var navigateToCourseList = false
     
+    // Dinamik bölüm listesi ve yükleme durumu
+    @State private var departments: [String] = []
+    @State private var isLoadingDepartments = false
+    @State private var departmentError: String? = nil
+    
     // Üniversite listesi
     let universities = [
         "Abdullah Gül Üniversitesi",
@@ -222,64 +227,6 @@ struct UniversitySelectionView: View {
         "Zonguldak Bülent Ecevit Üniversitesi"
     ]
     
-    // Bölüm listesi
-    let departments = [
-        "Adalet",
-        "Aşçılık",
-        "Bankacılık ve Sigortacılık",
-        "Bilgisayar Mühendisliği",
-        "Bilgisayar Programcılığı",
-        "Bilişim Güvenliği Teknolojisi",
-        "Çocuk Gelişimi",
-        "Dış Ticaret",
-        "Dijital Oyun Tasarımı",
-        "Ekonomi",
-        "Elektrik",
-        "Elektrik-Elektronik Mühendisliği",
-        "Elektronik Teknolojisi",
-        "Endüstri Mühendisliği",
-        "Fotoğrafçılık ve Kameramanlık",
-        "Gastronomi ve Mutfak Sanatları",
-        "Görsel İletişim Tasarımı",
-        "Grafik",
-        "Grafik Tasarımı",
-        "Halkla İlişkiler ve Tanıtım",
-        "Hukuk",
-        "İç Mimarlık",
-        "İletişim Tasarımı",
-        "İngiliz Dili ve Edebiyatı",
-        "İnsan Kaynakları Yönetimi",
-        "İnşaat Mühendisliği",
-        "İnşaat Teknolojisi",
-        "İş Sağlığı ve Güvenliği",
-        "İşletme (İngilizce)",
-        "İşletme (Türkçe)",
-        "Lojistik",
-        "Makine",
-        "Makine Mühendisliği",
-        "Matematik",
-        "Mekatronik",
-        "Mimari Restorasyon",
-        "Mimarlık",
-        "Moda Tasarımı",
-        "Mütercim-Tercümanlık",
-        "Otomotiv Teknolojisi",
-        "Psikoloji (İngilizce)",
-        "Psikoloji (Türkçe)",
-        "Radyo ve Televizyon Programcılığı",
-        "Sivil Hava Ulaştırma İşletmeciliği",
-        "Sivil Havacılık Kabin Hizmetleri",
-        "Spor Yönetimi",
-        "Türk Dili ve Edebiyatı",
-        "Turizm ve Otel İşletmeciliği",
-        "Uçak Teknolojisi",
-        "Uluslararası İlişkiler",
-        "Uluslararası Ticaret ve İşletmecilik",
-        "Uygulamalı İngilizce ve Çevirmenlik",
-        "Yazılım Mühendisliği",
-        "Yönetim Bilişim Sistemleri"
-    ]
-    
     // Arama terimleri için state değişkenleri
     @State private var universitySearchText = ""
     @State private var departmentSearchText = ""
@@ -287,6 +234,55 @@ struct UniversitySelectionView: View {
     // Kullanıcı seçimlerini kaydetmek için UserDefaults
     @AppStorage("selectedUniversity") var savedUniversity = ""
     @AppStorage("selectedDepartment") var savedDepartment = ""
+    
+    // Bölüm listesini yüklemek için API çağrısı yapan fonksiyon
+    private func loadDepartments(for university: String) {
+        isLoadingDepartments = true
+        departmentError = nil
+        
+        // API ile bölümleri çek
+        APIService.shared.getDepartments(university: university) { result in
+            DispatchQueue.main.async {
+                self.isLoadingDepartments = false
+                
+                switch result {
+                case .success(let fetchedDepartments):
+                    self.departments = fetchedDepartments
+                    
+                    // Eğer daha önce seçilmiş bir bölüm yoksa ve liste doluysa, ilk bölümü seç
+                    if self.selectedDepartment == nil && !fetchedDepartments.isEmpty {
+                        self.selectedDepartment = fetchedDepartments[0]
+                    }
+                    
+                case .failure(let error):
+                    self.departmentError = "Bölümler yüklenemedi: \(error.localizedDescription)"
+                    // Hata durumunda statik bölüm listesini göster
+                    self.departments = [
+                        "Adalet",
+                        "Aşçılık",
+                        "Bankacılık ve Sigortacılık",
+                        "Bilgisayar Mühendisliği",
+                        "Bilgisayar Programcılığı",
+                        "Bilişim Güvenliği Teknolojisi",
+                        "Çocuk Gelişimi",
+                        "Dış Ticaret",
+                        "Dijital Oyun Tasarımı",
+                        "Ekonomi",
+                        "Elektrik-Elektronik Mühendisliği",
+                        "Gastronomi ve Mutfak Sanatları",
+                        "Grafik Tasarımı",
+                        "Hukuk",
+                        "İşletme",
+                        "Makine Mühendisliği",
+                        "Mimarlık",
+                        "Psikoloji",
+                        "Yazılım Mühendisliği",
+                        "Yönetim Bilişim Sistemleri"
+                    ]
+                }
+            }
+        }
+    }
     
     var filteredUniversities: [String] {
         if universitySearchText.isEmpty {
@@ -351,6 +347,9 @@ struct UniversitySelectionView: View {
                                 selectedUniversity = university
                                 savedUniversity = university
                                 currentStep = 1
+                                
+                                // Üniversite seçildiğinde bölümleri yükle
+                                loadDepartments(for: university)
                             }) {
                                 HStack {
                                     Text(university)

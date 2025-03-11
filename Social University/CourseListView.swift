@@ -20,91 +20,88 @@ struct CourseListView: View {
     var user: User
     @State private var searchText = ""
     @State private var selectedDepartment: String?
-    // Sabit bölüm listesi - API'den çekmek yerine burada statik olarak tanımlıyoruz
-    @State private var departments: [String] = [
-        "Adalet",
-        "Aşçılık",
-        "Bankacılık ve Sigortacılık",
-        "Bilgisayar Mühendisliği",
-        "Bilgisayar Programcılığı",
-        "Bilişim Güvenliği Teknolojisi",
-        "Çocuk Gelişimi",
-        "Dış Ticaret",
-        "Dijital Oyun Tasarımı",
-        "Ekonomi",
-        "Elektrik",
-        "Elektrik-Elektronik Mühendisliği",
-        "Elektronik Teknolojisi",
-        "Endüstri Mühendisliği",
-        "Fotoğrafçılık ve Kameramanlık",
-        "Gastronomi ve Mutfak Sanatları",
-        "Görsel İletişim Tasarımı",
-        "Grafik",
-        "Grafik Tasarımı",
-        "Halkla İlişkiler ve Tanıtım",
-        "Hukuk",
-        "İç Mimarlık",
-        "İletişim Tasarımı",
-        "İngiliz Dili ve Edebiyatı",
-        "İnsan Kaynakları Yönetimi",
-        "İnşaat Mühendisliği",
-        "İnşaat Teknolojisi",
-        "İş Sağlığı ve Güvenliği",
-        "İşletme (İngilizce)",
-        "İşletme (Türkçe)",
-        "Lojistik",
-        "Makine",
-        "Makine Mühendisliği",
-        "Matematik",
-        "Mekatronik",
-        "Mimari Restorasyon",
-        "Mimarlık",
-        "Moda Tasarımı",
-        "Mütercim-Tercümanlık",
-        "Otomotiv Teknolojisi",
-        "Psikoloji (İngilizce)",
-        "Psikoloji (Türkçe)",
-        "Radyo ve Televizyon Programcılığı",
-        "Sivil Hava Ulaştırma İşletmeciliği",
-        "Sivil Havacılık Kabin Hizmetleri",
-        "Spor Yönetimi",
-        "Türk Dili ve Edebiyatı",
-        "Turizm ve Otel İşletmeciliği",
-        "Uçak Teknolojisi",
-        "Uluslararası İlişkiler",
-        "Uluslararası Ticaret ve İşletmecilik",
-        "Uygulamalı İngilizce ve Çevirmenlik",
-        "Yazılım Mühendisliği",
-        "Yönetim Bilişim Sistemleri"
-    ]
+    @State private var departments: [String] = []
     @State private var isLoading = false
-    @State private var errorMessage: String?
+    @State private var errorMessage: String? = nil // Eski hata mesajı (String)
+    @State private var alertMessage: AlertMessage? = nil // Yeni hata mesajı (Identifiable)
     @State private var showingLogoutAlert = false
     
-    // Uygulama genelinde oturum durumunu takip eden değişkenlere erişim
+    // Seçili sekme
+    @State private var selectedTab = 0 // 0: Tüm Dersler, 1: Katıldığım Dersler
+    
+    // Uygulama genelinde oturum durumunu takip eden değişkenler
     @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
+    
+    // Önbellek için değişkenler
+    @State private var cachedCourses: [Course] = []
+    @State private var cachedDepartments: [String] = []
+    @State private var lastCacheUpdate: Date? = nil
+    private let cacheDuration: TimeInterval = 3600
+    @State private var isOfflineMode = false
+    
+    // İşlem yapılan ders ID'sini ve işlem durumunu tutacak değişkenler
+    @State private var processingCourseId: String? = nil
+    @State private var isProcessingEnrollment = false
+    
+    // UserDefaults anahtarları
+    private let kCachedCoursesKey = "com.socialuniversity.cachedCourses"
+    private let kCachedDepartmentsKey = "com.socialuniversity.cachedDepartments"
+    private let kLastCacheUpdateKey = "com.socialuniversity.lastCacheUpdate"
     
     // UniversitySelectionView'dan seçilen değerlere erişim
     @AppStorage("selectedUniversity") private var selectedUniversity = ""
     @AppStorage("selectedDepartment") private var savedDepartment = ""
     
-    // Oturum durumunu güncelleyebilmek için Environment değişkeni
     @Environment(\.presentationMode) private var presentationMode
-    
-    // Çıkış yapıldığında giriş sayfasına dönmek için
     @State private var shouldNavigateToLogin = false
+    @State private var isLoadingDepartments = false
     
+    // Hatalar için identifiable yapı
+    struct AlertMessage: Identifiable {
+        let id = UUID()
+        let message: String
+    }
+    
+    // Tüm ders listeleri için filtreleme
     var filteredCourses: [Course] {
-        courses.filter { course in
-            let matchesSearch = searchText.isEmpty || 
-                course.courseName.localizedCaseInsensitiveContains(searchText) ||
-                course.courseCode.localizedCaseInsensitiveContains(searchText)
+        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Önbellekteki verileri kullan, yoksa courses kullan
+        let sourceCourses = !cachedCourses.isEmpty ? cachedCourses : courses
+        
+        // ID'si üzerinden tekrarları temizle
+        let uniqueCourses = Array(Dictionary(grouping: sourceCourses) { $0.id }.values.map { $0.first! })
+        
+        // Filtreleme işlemi
+        let filteredResults = uniqueCourses.filter { course in
+            // Eğer "Katıldığım Dersler" sekmesindeyse, sadece kayıtlı olduğum dersleri göster
+            let matchesEnrollment = selectedTab == 0 || (selectedTab == 1 && course.isEnrolled == true)
             
-            let matchesDepartment = selectedDepartment == nil || 
-                course.departmentName == selectedDepartment
+            // Arama filtresi - Basit içerip içermeme kontrolü
+            let matchesSearch: Bool
+            if trimmedSearchText.isEmpty {
+                matchesSearch = true
+            } else {
+                // Arama kelimelerini böl
+                let searchTerms = trimmedSearchText.lowercased().split(separator: " ")
+                
+                // Ders bilgileri
+                let courseInfo = "\(course.courseName) \(course.courseCode) \(course.departmentName)".lowercased()
+                
+                // Arama terimlerinin HEPSİ ders bilgilerinde geçiyor mu?
+                matchesSearch = searchTerms.allSatisfy { searchTerm in
+                    courseInfo.contains(searchTerm)
+                }
+            }
             
-            return matchesSearch && matchesDepartment
+            // Bölüm filtresi
+            let matchesDepartment = selectedDepartment == nil || course.departmentName == selectedDepartment
+            
+            return matchesEnrollment && matchesSearch && matchesDepartment
         }
+        
+        // Ders adına göre alfabetik sıralama
+        return filteredResults.sorted { $0.courseName.localizedCaseInsensitiveCompare($1.courseName) == .orderedAscending }
     }
     
     var body: some View {
@@ -115,38 +112,6 @@ struct CourseListView: View {
                     .padding(8)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
-                
-                /*
-                if !departments.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            Button(action: {
-                                selectedDepartment = nil
-                            }) {
-                                Text("Tümü")
-                                    .padding(.vertical, 5)
-                                    .padding(.horizontal, 10)
-                                    .background(selectedDepartment == nil ? Color.blue : Color.gray.opacity(0.2))
-                                    .foregroundColor(selectedDepartment == nil ? .white : .primary)
-                                    .cornerRadius(15)
-                            }
-                            
-                            ForEach(departments, id: \.self) { department in
-                                Button(action: {
-                                    selectedDepartment = department
-                                }) {
-                                    Text(department)
-                                        .padding(.vertical, 5)
-                                        .padding(.horizontal, 10)
-                                        .background(selectedDepartment == department ? Color.blue : Color.gray.opacity(0.2))
-                                        .foregroundColor(selectedDepartment == department ? .white : .primary)
-                                        .cornerRadius(15)
-                                }
-                            }
-                        }
-                    }
-                }
-                */
             }
             .padding()
             
@@ -163,6 +128,38 @@ struct CourseListView: View {
                         Text("Bölüm: \(savedDepartment)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+            
+            // Sekme seçimi
+            Picker("Dersler", selection: $selectedTab) {
+                Text("Tüm Dersler").tag(0)
+                Text("Katıldığım Dersler").tag(1)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            
+            // Çevrimdışı mod uyarısı
+            if isOfflineMode {
+                HStack {
+                    Image(systemName: "wifi.slash")
+                        .foregroundColor(.orange)
+                    
+                    Text("Çevrimdışı mod - Veriler önbellekten yüklendi")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        loadCourses(forceRefresh: true) // Yeniden bağlantı denemesi
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.blue)
                     }
                 }
                 .padding(.horizontal)
@@ -187,37 +184,58 @@ struct CourseListView: View {
                 Spacer()
             } else if filteredCourses.isEmpty {
                 Spacer()
-                Text(searchText.isEmpty && selectedDepartment == nil ? "Henüz ders yok" : "Arama kriterlerine uygun ders bulunamadı")
+                Text(selectedTab == 0 
+                     ? (searchText.isEmpty && selectedDepartment == nil ? "Henüz ders yok" : "Arama kriterlerine uygun ders bulunamadı")
+                     : "Henüz bir derse katılmadınız")
                     .foregroundColor(.gray)
                 Spacer()
             } else {
                 List {
                     ForEach(filteredCourses) { course in
                         NavigationLink(destination: ChatView(user: user, course: course)) {
-                            CourseRow(course: course, isEnrolled: isEnrolled(course: course))
+                            CourseRow(course: course, isEnrolled: course.isEnrolled ?? false)
                         }
                         .swipeActions {
-                            if isEnrolled(course: course) {
+                            if course.isEnrolled ?? false {
                                 Button(role: .destructive) {
                                     unenrollCourse(course: course)
                                 } label: {
-                                    Label("Ayrıl", systemImage: "person.fill.xmark")
+                                    if processingCourseId == course.id && isProcessingEnrollment {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Label("Ayrıl", systemImage: "person.fill.xmark")
+                                    }
                                 }
+                                .disabled(processingCourseId != nil)
                             } else {
                                 Button {
                                     enrollCourse(course: course)
                                 } label: {
-                                    Label("Katıl", systemImage: "person.fill.badge.plus")
+                                    if processingCourseId == course.id && isProcessingEnrollment {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Label("Katıl", systemImage: "person.fill.badge.plus")
+                                    }
                                 }
                                 .tint(.green)
+                                .disabled(processingCourseId != nil)
                             }
+                        }
+                        .alert(item: $alertMessage) { alertMessage in
+                            Alert(
+                                title: Text("Hata"),
+                                message: Text(alertMessage.message),
+                                dismissButton: .default(Text("Tamam"))
+                            )
                         }
                     }
                 }
             }
         }
         .navigationTitle("Dersler")
-        .navigationBarBackButtonHidden(true) // Geri dönüş butonunu gizle
+        .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
@@ -242,10 +260,31 @@ struct CourseListView: View {
                 selectedDepartment = savedDepartment
             }
             
-            loadCourses()
+            // UserDefaults'tan önbellekteki verileri yükle
+            loadCachedDataFromUserDefaults()
+            
+            // Eğer üniversite seçilmişse ve henüz yüklenmemişse, dersleri yükle
+            if !selectedUniversity.isEmpty {
+                loadCourses()
+            }
         }
         .refreshable {
             loadCourses()
+        }
+        // Üniversite değiştiğinde dersleri yükle
+        .onChange(of: selectedUniversity) { oldValue, newValue in
+            if !newValue.isEmpty {
+                // Yeni üniversite seçildiğinde önbelleği temizle ve dersleri yeniden yükle
+                if oldValue != newValue {
+                    cachedCourses = []
+                    cachedDepartments = []
+                    lastCacheUpdate = nil
+                    selectedDepartment = nil
+                    // UserDefaults'tan kaydedilmiş bölümü temizle
+                    UserDefaults.standard.removeObject(forKey: "selectedDepartment")
+                }
+                loadCourses()
+            }
         }
         // NavigationStack'in kökünde bulunan login sayfasına dön
         .onChange(of: shouldNavigateToLogin) { _, newValue in
@@ -284,84 +323,241 @@ struct CourseListView: View {
         }
     }
     
-    private func loadCourses() {
-        isLoading = true
-        errorMessage = nil
+    // UserDefaults'tan önbelleklenmiş verileri yükleme
+    private func loadCachedDataFromUserDefaults() {
+        if let courseData = UserDefaults.standard.data(forKey: kCachedCoursesKey),
+           let courses = try? JSONDecoder().decode([Course].self, from: courseData) {
+            self.cachedCourses = courses
+            print("Önbellekten \(courses.count) ders yüklendi")
+        }
         
-        // Seçilen bölüm bilgisini API çağrısına ekle
-        APIService.shared.getCourses(
-            studentId: user.studentNumber,
-            search: searchText.isEmpty ? nil : searchText,
-            department: selectedDepartment
-        ) { result in
-            isLoading = false
-            
-            switch result {
-            case .success(let (fetchedCourses, fetchedDepartments)):
-                // Mevcut dersleri temizle
-                for course in courses {
-                    modelContext.delete(course)
-                }
-                
-                // Yeni dersleri ekle
-                for course in fetchedCourses {
-                    modelContext.insert(course)
-                }
-                
-                // Bölüm listesini güncelle (eğer API'den bölüm listesi geliyorsa)
-                if !fetchedDepartments.isEmpty {
-                    self.departments = fetchedDepartments
-                }
-                
-                // Eğer seçili bölüm artık mevcut değilse, seçimi temizle
-                if let selectedDepartment = selectedDepartment, !departments.contains(selectedDepartment) {
-                    self.selectedDepartment = nil
-                }
-                
-            case .failure(let error):
-                errorMessage = "Dersler yüklenemedi: \(error.localizedDescription)"
-            }
+        if let departmentsData = UserDefaults.standard.data(forKey: kCachedDepartmentsKey),
+           let departments = try? JSONDecoder().decode([String].self, from: departmentsData) {
+            self.cachedDepartments = departments
+            self.departments = departments
+            print("Önbellekten \(departments.count) bölüm yüklendi")
+        }
+        
+        if let lastUpdateDate = UserDefaults.standard.object(forKey: kLastCacheUpdateKey) as? Date {
+            self.lastCacheUpdate = lastUpdateDate
         }
     }
     
+    // Önbellekteki verileri UserDefaults'a kaydetme
+    private func saveCachedDataToUserDefaults() {
+        if !cachedCourses.isEmpty {
+            if let courseData = try? JSONEncoder().encode(cachedCourses) {
+                UserDefaults.standard.set(courseData, forKey: kCachedCoursesKey)
+                print("Dersler önbelleğe kaydedildi")
+            }
+        }
+        
+        if !cachedDepartments.isEmpty {
+            if let departmentsData = try? JSONEncoder().encode(cachedDepartments) {
+                UserDefaults.standard.set(departmentsData, forKey: kCachedDepartmentsKey)
+                print("Bölümler önbelleğe kaydedildi")
+            }
+        }
+        
+        if let lastUpdate = lastCacheUpdate {
+            UserDefaults.standard.set(lastUpdate, forKey: kLastCacheUpdateKey)
+        }
+        
+        UserDefaults.standard.synchronize()
+    }
+    
+    private func loadCourses(forceRefresh: Bool = false) {
+        // İnternet bağlantısı kontrolü
+        let isConnected = checkInternetConnection()
+        
+        // Önbellek kontrolü yap (forceRefresh true ise yoksay)
+        if !forceRefresh && !cachedCourses.isEmpty && lastCacheUpdate != nil {
+            // Son güncelleme zamanından bu yana geçen süreyi kontrol et
+            let timeSinceLastUpdate = Date().timeIntervalSince(lastCacheUpdate!)
+            
+            // Önbellek süresi dolmadıysa ve önbellekte veri varsa
+            if timeSinceLastUpdate < cacheDuration || !isConnected {
+                print("Önbellekten dersler yüklendi")
+                
+                // Önbellekteki verileri kullanmadan önce tekrarlanan dersleri temizle
+                let uniqueCourses = Array(Dictionary(grouping: cachedCourses) { $0.id }.values.map { $0.first! })
+                
+                // Önbellekteki verilerle SwiftData'yı güncelle
+                try? modelContext.delete(model: Course.self)
+                
+                for course in uniqueCourses {
+                    modelContext.insert(course)
+                }
+                
+                // Bölüm listesini önbellekten al
+                if !cachedDepartments.isEmpty {
+                    self.departments = cachedDepartments
+                }
+                
+                // Çevrimdışı modu göster
+                self.isOfflineMode = !isConnected
+                
+                return
+            }
+        }
+        
+        // İnternet bağlantısı yoksa ve önbellekte hiç veri yoksa uyarı göster
+        if !isConnected && cachedCourses.isEmpty {
+            self.showError("İnternet bağlantısı yok ve önbellekte veri bulunamadı")
+            self.isOfflineMode = true
+            return
+        }
+        
+        // Önbellekte veri yoksa veya önbellek süresi dolduysa ve internet varsa, sunucudan yükle
+        if isConnected {
+            isLoading = true
+            errorMessage = nil
+            isOfflineMode = false
+            
+            // Arama metnini temizle
+            let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Seçilen üniversite ve bölüm bilgilerini API çağrısına ekle
+            APIService.shared.getCourses(
+                studentId: user.studentNumber,
+                search: trimmedSearchText.isEmpty ? nil : trimmedSearchText,
+                department: selectedDepartment,
+                university: selectedUniversity.isEmpty ? nil : selectedUniversity
+            ) { result in
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    
+                    switch result {
+                    case .success(let (fetchedCourses, fetchedDepartments)):
+                        // Mevcut dersleri temizle
+                        try? self.modelContext.delete(model: Course.self)
+                        
+                        // Tekrarlanan dersleri temizle
+                        let uniqueCourses = Array(Dictionary(grouping: fetchedCourses) { $0.id }.values.map { $0.first! })
+                        
+                        // Yeni dersleri ekle
+                        for course in uniqueCourses {
+                            self.modelContext.insert(course)
+                        }
+                        
+                        // Önbelleğe al
+                        self.cachedCourses = uniqueCourses
+                        self.cachedDepartments = fetchedDepartments
+                        self.lastCacheUpdate = Date()
+                        
+                        // Kalıcı önbelleğe kaydet
+                        self.saveCachedDataToUserDefaults()
+                        
+                        // Bölüm listesini güncelle
+                        if !fetchedDepartments.isEmpty {
+                            self.departments = fetchedDepartments
+                            
+                            // Eğer daha önce seçilmiş bir bölüm varsa ve bu bölüm listede yoksa, seçimi temizle
+                            if let selectedDepartment = self.selectedDepartment, !fetchedDepartments.contains(selectedDepartment) {
+                                self.selectedDepartment = nil
+                            }
+                        }
+                        
+                    case .failure(let error):
+                        // Hata durumunda önbellekteki verileri kullan
+                        if !self.cachedCourses.isEmpty {
+                            self.isOfflineMode = true
+                            self.showError("Sunucuya erişilemiyor, önbellekteki veriler gösteriliyor")
+                        } else {
+                            self.showError("Dersler yüklenemedi: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+        } else {
+            // İnternet yok ve önbellekte veri var
+            isOfflineMode = true
+        }
+    }
+    
+    // İnternet bağlantısı kontrolü yapan yardımcı fonksiyon
+    private func checkInternetConnection() -> Bool {
+        // Basit bir kontrol - gerçek uygulamada Reachability gibi bir kütüphane kullanılmalı
+        // Bu örnekte, her zaman bağlantı var gibi davranıyoruz, ancak gerçek uygulamada değiştirilmeli
+        return true
+    }
+    
     private func isEnrolled(course: Course) -> Bool {
-        // API'den gelen bilgiye göre derse kayıtlı olup olmadığını kontrol et
-        // Bu bilgi course nesnesinde saklanabilir
         return course.isEnrolled ?? false
     }
     
     private func enrollCourse(course: Course) {
-        isLoading = true
+        // Sadece ilgili butonun durumunu göster
+        processingCourseId = course.id
+        isProcessingEnrollment = true
         errorMessage = nil
         
         APIService.shared.enrollCourse(studentId: user.studentNumber, courseCode: course.courseCode, action: "enroll") { result in
-            isLoading = false
-            
-            switch result {
-            case .success:
-                // Dersleri yeniden yükle
-                loadCourses()
+            DispatchQueue.main.async {
+                // İşlem tamamlandığında yükleme durumunu kapat
+                self.processingCourseId = nil
+                self.isProcessingEnrollment = false
                 
-            case .failure(let error):
-                errorMessage = "Derse katılınamadı: \(error.localizedDescription)"
+                switch result {
+                case .success:
+                    // Sadece ilgili dersin durumunu güncelle
+                    // Önbellekteki dersi güncelle
+                    if let index = self.cachedCourses.firstIndex(where: { $0.id == course.id }) {
+                        self.cachedCourses[index].isEnrolled = true
+                    }
+                    
+                    // SwiftData'da dersi güncelle
+                    if let dbCourse = self.courses.first(where: { $0.id == course.id }) {
+                        dbCourse.isEnrolled = true
+                    }
+                    
+                case .failure(let error):
+                    self.showError("Derse katılınamadı: \(error.localizedDescription)")
+                    
+                    // Hata ayrıntılarını yazdır
+                    print("Derse katılma hatası: \(error)")
+                    if let nsError = error as NSError? {
+                        print("NSError ayrıntıları: \(nsError.domain), \(nsError.code), \(nsError.userInfo)")
+                    }
+                }
             }
         }
     }
     
     private func unenrollCourse(course: Course) {
-        isLoading = true
+        // Sadece ilgili butonun durumunu göster
+        processingCourseId = course.id
+        isProcessingEnrollment = true
         errorMessage = nil
         
         APIService.shared.enrollCourse(studentId: user.studentNumber, courseCode: course.courseCode, action: "unenroll") { result in
-            isLoading = false
-            
-            switch result {
-            case .success:
-                // Dersleri yeniden yükle
-                loadCourses()
+            DispatchQueue.main.async {
+                // İşlem tamamlandığında yükleme durumunu kapat
+                self.processingCourseId = nil
+                self.isProcessingEnrollment = false
                 
-            case .failure(let error):
-                errorMessage = "Dersten ayrılınamadı: \(error.localizedDescription)"
+                switch result {
+                case .success:
+                    // Sadece ilgili dersin durumunu güncelle                    
+                    // Önbellekteki dersi güncelle
+                    if let index = self.cachedCourses.firstIndex(where: { $0.id == course.id }) {
+                        self.cachedCourses[index].isEnrolled = false
+                    }
+                    
+                    // SwiftData'da dersi güncelle
+                    if let dbCourse = self.courses.first(where: { $0.id == course.id }) {
+                        dbCourse.isEnrolled = false
+                    }
+                    
+                case .failure(let error):
+                    self.showError("Dersten ayrılınamadı: \(error.localizedDescription)")
+                    
+                    // Hata ayrıntılarını yazdır
+                    print("Dersten ayrılma hatası: \(error)")
+                    if let nsError = error as NSError? {
+                        print("NSError ayrıntıları: \(nsError.domain), \(nsError.code), \(nsError.userInfo)")
+                    }
+                }
             }
         }
     }
@@ -388,8 +584,18 @@ struct CourseListView: View {
                 UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
                 UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userInfo")
                 
+                // Önbellek verilerini de temizle
+                UserDefaults.standard.removeObject(forKey: self.kCachedCoursesKey)
+                UserDefaults.standard.removeObject(forKey: self.kCachedDepartmentsKey)
+                UserDefaults.standard.removeObject(forKey: self.kLastCacheUpdateKey)
+                
                 // Değişiklikleri hemen kaydet ve yayınla
                 UserDefaults.standard.synchronize()
+                
+                // Önbelleği temizle
+                self.cachedCourses = []
+                self.cachedDepartments = []
+                self.lastCacheUpdate = nil
                 
                 // Giriş durumunu false olarak ayarla - bu @AppStorage bağlı olduğundan Social_UniversityApp'i tetikleyecek
                 self.isAuthenticated = false
@@ -400,6 +606,12 @@ struct CourseListView: View {
                 print("Çıkış yapıldı, login sayfasına yönlendiriliyor...")
             }
         }
+    }
+    
+    // Hata gösterme yardımcı fonksiyonu
+    private func showError(_ message: String) {
+        self.errorMessage = message // Genel display için 
+        self.alertMessage = AlertMessage(message: message) // Alert için
     }
 }
 

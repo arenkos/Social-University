@@ -38,7 +38,60 @@ class APIService {
     
     // MARK: - Ders İşlemleri
     
-    func getCourses(studentId: String? = nil, search: String? = nil, department: String? = nil, completion: @escaping (Result<([Social_University.Course], [String]), Error>) -> Void) {
+    func getDepartments(university: String, completion: @escaping (Result<[String], Error>) -> Void) {
+        var urlComponents = URLComponents(string: "\(baseURL)/get_courses.php")!
+        
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "university", value: university),
+            URLQueryItem(name: "get_departments_only", value: "true")
+        ]
+        
+        urlComponents.queryItems = queryItems
+        
+        let request = URLRequest(url: urlComponents.url!)
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+            
+            guard let data = data else {
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
+                }
+                return
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                
+                guard let success = json?["success"] as? Bool, success else {
+                    let message = json?["message"] as? String ?? "Bilinmeyen hata"
+                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+                }
+                
+                guard let responseData = json?["data"] as? [String: Any],
+                      let departments = responseData["departments"] as? [String] else {
+                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bölüm bilgileri alınamadı"])
+                }
+                
+                DispatchQueue.main.async {
+                    completion(.success(departments))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+        
+        task.resume()
+    }
+    
+    func getCourses(studentId: String? = nil, search: String? = nil, department: String? = nil, university: String? = nil, completion: @escaping (Result<([Social_University.Course], [String]), Error>) -> Void) {
         var urlComponents = URLComponents(string: "\(baseURL)/get_courses.php")!
         
         var queryItems: [URLQueryItem] = []
@@ -53,6 +106,10 @@ class APIService {
         
         if let department = department, !department.isEmpty {
             queryItems.append(URLQueryItem(name: "department", value: department))
+        }
+        
+        if let university = university, !university.isEmpty {
+            queryItems.append(URLQueryItem(name: "university", value: university))
         }
         
         urlComponents.queryItems = queryItems
@@ -77,7 +134,7 @@ class APIService {
             do {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 
-                guard let status = json?["status"] as? Bool, status else {
+                guard let success = json?["success"] as? Bool, success else {
                     let message = json?["message"] as? String ?? "Bilinmeyen hata"
                     throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
                 }
@@ -136,42 +193,71 @@ class APIService {
             "action": action // "enroll" veya "unenroll"
         ]
         
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
-        let task = session.dataTask(with: request) { data, response, error in
-            if let error = error {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = jsonData
             
-            guard let data = data else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
-                }
-                return
-            }
+            print("Sunucu istek gönderiliyor: \(body)")
             
-            do {
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                
-                guard let status = json?["status"] as? Bool, status else {
-                    let message = json?["message"] as? String ?? "Bilinmeyen hata"
-                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+            let task = session.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        print("Ağ hatası: \(error.localizedDescription)")
+                        completion(.failure(error))
+                    }
+                    return
                 }
                 
-                DispatchQueue.main.async {
-                    completion(.success(()))
+                guard let data = data else {
+                    DispatchQueue.main.async {
+                        print("Veri alınamadı")
+                        completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
+                    }
+                    return
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
+                
+                // Debug: Sunucudan dönen veriyi yazdır
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Sunucu yanıtı: \(responseString)")
                 }
+                
+                do {
+                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    print("Ayrıştırılan JSON: \(String(describing: json))")
+                    
+                    // Sunucudan dönen yanıtın yapısını kontrol et
+                    guard let json = json else {
+                        throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "JSON verisi bulunamadı"])
+                    }
+                    
+                    // success değerini kontrol et
+                    guard let success = json["success"] as? Bool else {
+                        throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Sunucu yanıtında 'success' değeri bulunamadı"])
+                    }
+                    
+                    if !success {
+                        let message = json["message"] as? String ?? "Bilinmeyen hata"
+                        throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+                    }
+                    
+                    DispatchQueue.main.async {
+                        completion(.success(()))
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        print("JSON ayrıştırma hatası: \(error.localizedDescription)")
+                        completion(.success(()))
+                    }
+                }
+            }
+            
+            task.resume()
+        } catch {
+            DispatchQueue.main.async {
+                print("JSON oluşturma hatası: \(error.localizedDescription)")
+                completion(.failure(error))
             }
         }
-        
-        task.resume()
     }
     
     // MARK: - Mesaj İşlemleri
@@ -205,7 +291,7 @@ class APIService {
             do {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 
-                guard let status = json?["status"] as? Bool, status else {
+                guard let success = json?["success"] as? Bool, success else {
                     let message = json?["message"] as? String ?? "Bilinmeyen hata"
                     throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
                 }
@@ -290,7 +376,7 @@ class APIService {
             do {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 
-                guard let status = json?["status"] as? Bool, status else {
+                guard let success = json?["success"] as? Bool, success else {
                     let message = json?["message"] as? String ?? "Bilinmeyen hata"
                     throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
                 }
