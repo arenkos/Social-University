@@ -300,6 +300,40 @@ struct UniversitySelectionView: View {
         }
     }
     
+    // Devam et ve bölüm seçimini kaydet
+    private func saveDepartmentSelection() {
+        // Seçimleri UserDefaults'a kaydet
+        savedUniversity = selectedUniversity ?? ""
+        savedDepartment = selectedDepartment ?? ""
+        
+        // Kullanıcı modelini güncelle
+        user.university = selectedUniversity
+        user.department = selectedDepartment ?? ""
+        
+        // Veritabanına kaydet
+        if let university = selectedUniversity, let department = selectedDepartment {
+            APIService.shared.updateUser(userId: user.id, university: university, department: department) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(_):
+                        print("Kullanıcı bilgileri başarıyla güncellendi")
+                        // Ders listesine yönlendir
+                        self.navigateToCourseList = true
+                    case .failure(let error):
+                        print("Kullanıcı bilgileri güncellenirken hata oluştu: \(error.localizedDescription)")
+                        // Hata olsa bile ders listesine yönlendir, çünkü local olarak kaydedildi
+                        self.navigateToCourseList = true
+                    }
+                }
+            }
+        } else {
+            // Üniversite veya bölüm seçilmemişse hata göster veya varsayılan değerler kullan
+            print("Üniversite veya bölüm seçilmedi!")
+            // Yine de ders listesine yönlendir
+            navigateToCourseList = true
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             VStack {
@@ -369,37 +403,62 @@ struct UniversitySelectionView: View {
                     }
                 } else {
                     // Bölüm seçim listesi
-                    List {
-                        ForEach(filteredDepartments, id: \.self) { department in
+                    if isLoadingDepartments {
+                        ProgressView("Bölümler yükleniyor...")
+                            .padding()
+                    } else if let error = departmentError {
+                        VStack {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .padding()
+                            
                             Button(action: {
-                                selectedDepartment = department
-                                savedDepartment = department
-                                
-                                // Kullanıcı bilgisini güncelle
-                                let updatedUser = user
-                                updatedUser.department = department
-                                modelContext.insert(updatedUser)
-                                
-                                // API ile bölüm bilgisini güncelle - Eğer API varsa eklenebilir
-                                // updateUserDepartment(userId: user.id, department: department)
-                                
-                                // Ders listesine yönlendir
-                                navigateToCourseList = true
+                                // Üniversiteyi yeniden seçtir
+                                currentStep = 0
                             }) {
-                                HStack {
-                                    Text(department)
-                                    
-                                    Spacer()
-                                    
-                                    if department == selectedDepartment {
-                                        Image(systemName: "checkmark")
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                                .padding(.vertical, 4)
+                                Text("Üniversite Seçimine Dön")
+                                    .foregroundColor(.blue)
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .padding()
+                        }
+                    } else {
+                        List {
+                            ForEach(filteredDepartments, id: \.self) { department in
+                                Button(action: {
+                                    selectedDepartment = department
+                                    savedDepartment = department
+                                }) {
+                                    HStack {
+                                        Text(department)
+                                        
+                                        Spacer()
+                                        
+                                        if department == selectedDepartment {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                    .padding(.vertical, 4)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
+                        // Bölüm seçimi tamamlandığında gösterilecek ileri butonu
+                        if selectedDepartment != nil {
+                            Button(action: {
+                                saveDepartmentSelection()
+                            }) {
+                                Text("Devam Et")
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
+                            }
+                            .padding()
                         }
                     }
                 }

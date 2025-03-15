@@ -1,6 +1,27 @@
 import Foundation
 import SwiftData
 
+// SwiftData için Schema
+enum AppSchema {
+    static var schema: Schema {
+        Schema([
+            User.self,
+            Course.self,
+            Message.self,
+            Item.self
+        ])
+    }
+    
+    static func modelContainer() -> ModelContainer {
+        do {
+            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+        } catch {
+            fatalError("Could not create ModelContainer: \(error)")
+        }
+    }
+}
+
 // Kullanıcı modeli
 @Model
 public final class User {
@@ -10,14 +31,16 @@ public final class User {
     public var surname: String
     public var studentNumber: String
     public var department: String
+    public var university: String?
     
-    public init(id: String, email: String, name: String, surname: String, studentNumber: String, department: String) {
+    public init(id: String, email: String, name: String, surname: String, studentNumber: String, department: String, university: String = "") {
         self.id = id
         self.email = email
         self.name = name
         self.surname = surname
         self.studentNumber = studentNumber
         self.department = department
+        self.university = university
     }
 }
 

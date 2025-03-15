@@ -24,69 +24,50 @@ struct Social_UniversityApp: App {
     // Yeniden başlatma gerektiğinde kullanılacak
     @State private var resetNavigation = false
     
+    // AppSchema'yı kullanarak model container oluştur
+    let sharedModelContainer = AppSchema.modelContainer()
+    
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                // Oturum durumuna göre görünüm belirleme
-                Group {
-                    if isAuthenticated {
-                        // Önceden giriş yapılmışsa, UniversitySelectionView göster
-                        if isInitialized {
-                            UniversitySelectionView(user: currentUser ?? createDefaultUser())
-                        } else {
-                            // Yükleniyor ekranı
-                            ProgressView("Yükleniyor...")
-                                .onAppear {
-                                    loadUserData()
-                                }
-                        }
-                    } else {
-                        // Giriş yapılmamışsa, LoginView göster
-                        LoginView()
-                            .onAppear {
-                                // Giriş sayfası gösterildiğinde tüm state'i sıfırla
-                                print("Giriş sayfası gösteriliyor, durum sıfırlanıyor.")
-                                currentUser = nil
-                                isInitialized = false
-                            }
+            ContentView()
+                .environmentObject(AuthService())
+                .modelContainer(sharedModelContainer)
+                .onAppear {
+                    // App başladığında veritabanı hatalarını önlemek için gerekli
+                    print("ContentView görünümü başlatılıyor ve modelContainer ayarlanıyor")
+                }
+                .onChange(of: isAuthenticated) { oldValue, newValue in
+                    print("Oturum durumu değişti: \(oldValue) -> \(newValue)")
+                    if !newValue {
+                        // Çıkış yapıldığında tüm veriler temizlenir
+                        currentUser = nil
+                        isInitialized = false
+                        
+                        // NavigationStack'i yeniden oluşturmak için ID değiştir
+                        resetNavigation.toggle()
+                        
+                        // Bu kısım otomatik olarak giriş sayfasına yönlendirecek
+                        print("Oturum kapatıldı, giriş sayfasına yönlendiriliyor")
+                    } else if !isInitialized {
+                        // Giriş yapıldığında, kullanıcı verilerini yükle
+                        loadUserData()
                     }
                 }
-                .animation(.default, value: isAuthenticated) // Geçişler için animasyon ekle
-                .id(resetNavigation) // NavigationStack'i yeniden oluşturmak için ID değiştirilir
-            }
-            .modelContainer(for: [User.self, Course.self, Message.self, Item.self])
-            .onChange(of: isAuthenticated) { oldValue, newValue in
-                print("Oturum durumu değişti: \(oldValue) -> \(newValue)")
-                if !newValue {
-                    // Çıkış yapıldığında tüm veriler temizlenir
-                    currentUser = nil
-                    isInitialized = false
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LogoutNotification"))) { _ in
+                    print("Çıkış bildirimi alındı, uygulama yeniden başlatılıyor...")
+                    // isAuthenticated zaten false yapılmış olmalı, ama yine de kontrol et
+                    if isAuthenticated {
+                        isAuthenticated = false
+                    }
                     
-                    // NavigationStack'i yeniden oluşturmak için ID değiştir
+                    // NavigationStack'i yeniden oluştur
                     resetNavigation.toggle()
                     
-                    // Bu kısım otomatik olarak giriş sayfasına yönlendirecek
-                    print("Oturum kapatıldı, giriş sayfasına yönlendiriliyor")
-                } else if !isInitialized {
-                    // Giriş yapıldığında, kullanıcı verilerini yükle
-                    loadUserData()
+                    #if canImport(UIKit)
+                    // Root view controller'ı sıfırla
+                    resetRootViewController()
+                    #endif
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LogoutNotification"))) { _ in
-                print("Çıkış bildirimi alındı, uygulama yeniden başlatılıyor...")
-                // isAuthenticated zaten false yapılmış olmalı, ama yine de kontrol et
-                if isAuthenticated {
-                    isAuthenticated = false
-                }
-                
-                // NavigationStack'i yeniden oluştur
-                resetNavigation.toggle()
-                
-                #if canImport(UIKit)
-                // Root view controller'ı sıfırla
-                resetRootViewController()
-                #endif
-            }
         }
     }
     

@@ -7,9 +7,13 @@
 
 import SwiftUI
 import SwiftData
+
 #if canImport(UIKit)
 import UIKit
 #endif
+
+// AppModels.swift dosyasından modelleri otomatik olarak kullanıyoruz
+// Swift modelleri aynı projede olduğu için buradan doğrudan erişilebilir
 
 struct LoginView: View {
     @Environment(\.modelContext) private var modelContext
@@ -20,13 +24,35 @@ struct LoginView: View {
     @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
     @State private var currentUser: User?
     
-    // Demo kullanıcı için geçici yönlendirme kontrolü
+    // Görünüm Durumu
+    @State private var viewState: ViewState = .login
+    
+    // Login Alanları
+    @State private var loginEmail = ""
+    @State private var loginPassword = ""
+    
+    // Kayıt Alanları
+    @State private var registerEmail = ""
+    @State private var registerPassword = ""
+    @State private var registerConfirmPassword = ""
+    @State private var registerNameSurname = ""
+    @State private var registerStudentNumber = ""
+    @State private var registerPhone = ""
+    
+    // Yönlendirme Kontrolü
+    @State private var shouldNavigateToCourses = false
     @State private var shouldNavigateToUniversitySelection = false
+    @State private var shouldNavigateToDepartmentSelection = false
+    
+    enum ViewState {
+        case login
+        case register
+    }
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 30) {
-                // Başlık ve açıklama
+            VStack(spacing: 20) {
+                // Başlık ve logo
                 VStack(spacing: 10) {
                     Image("AppLogo") // Logo ekleyebilirsiniz
                         .resizable()
@@ -42,51 +68,35 @@ struct LoginView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                .padding(.top)
                 
-                Spacer()
-                
-                // Giriş bölümü
-                VStack(spacing: 20) {
-                    if isLoading {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .padding()
-                    } else if let errorMessage = errorMessage {
-                        Text(errorMessage)
-                            .foregroundColor(.red)
-                            .padding()
-                    }
-                    
-                    Button(action: {
-                        signInWithMicrosoft()
-                    }) {
-                        HStack {
-                            Image(systemName: "globe")
-                                .font(.title3)
-                            Text("Microsoft Hesabı ile Giriş Yap")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                    }
-                    .disabled(isLoading)
-                    
-                    Text("veya")
-                        .foregroundColor(.secondary)
-                    
-                    Button(action: {
-                        createDemoUser()
-                    }) {
-                        Text("Demo kullanıcı ile devam et")
-                            .underline()
-                            .foregroundColor(.secondary)
-                    }
-                    .disabled(isLoading)
+                // Görünüm Seçici (Login / Register)
+                Picker("Görünüm", selection: $viewState) {
+                    Text("Giriş Yap").tag(ViewState.login)
+                    Text("Kayıt Ol").tag(ViewState.register)
                 }
+                .pickerStyle(SegmentedPickerStyle())
                 .padding(.horizontal, 30)
+                
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .padding()
+                } else if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .padding()
+                }
+                
+                // İçerik Alanı
+                ScrollView {
+                    if viewState == .login {
+                        loginView
+                    } else {
+                        registerView
+                    }
+                }
+                .scrollDismissesKeyboard(.interactively)
                 
                 Spacer()
                 
@@ -101,6 +111,237 @@ struct LoginView: View {
                 if let user = currentUser {
                     UniversitySelectionView(user: user)
                 }
+            }
+            .navigationDestination(isPresented: $shouldNavigateToDepartmentSelection) {
+                if let user = currentUser {
+                    // Bölüm seçim ekranına yönlendir
+                    // Örnek: DepartmentSelectionView(user: user)
+                    Text("Bölüm Seçim Sayfası Yükleniyor...")
+                }
+            }
+            .navigationDestination(isPresented: $shouldNavigateToCourses) {
+                if let user = currentUser {
+                    // Ders listesi sayfasına yönlendir
+                    CourseListView(user: user)
+                }
+            }
+        }
+    }
+    
+    // Giriş Formu
+    private var loginView: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 15) {
+                TextField("E-posta", text: $loginEmail)
+                    .autocapitalization(.none)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                
+                SecureField("Şifre", text: $loginPassword)
+                    .textContentType(.password)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                
+                Button(action: {
+                    loginWithEmailPassword()
+                }) {
+                    Text("Giriş Yap")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(isLoading || loginEmail.isEmpty || loginPassword.isEmpty)
+            }
+            .padding(.horizontal, 30)
+            
+            Divider()
+                .padding(.vertical)
+            
+            // Microsoft ile Giriş
+            VStack(spacing: 15) {
+                Button(action: {
+                    signInWithMicrosoft()
+                }) {
+                    HStack {
+                        Image(systemName: "globe")
+                            .font(.title3)
+                        Text("Microsoft Hesabı ile Giriş Yap")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading)
+                
+                // Demo Kullanıcı
+                Button(action: {
+                    createDemoUser()
+                }) {
+                    Text("Demo kullanıcı ile devam et")
+                        .underline()
+                        .foregroundColor(.secondary)
+                }
+                .disabled(isLoading)
+            }
+            .padding(.horizontal, 30)
+        }
+    }
+    
+    // Kayıt Formu
+    private var registerView: some View {
+        VStack(spacing: 15) {
+            TextField("Ad Soyad", text: $registerNameSurname)
+                .textContentType(.name)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            TextField("E-posta", text: $registerEmail)
+                .autocapitalization(.none)
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            SecureField("Şifre", text: $registerPassword)
+                .textContentType(.newPassword)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            SecureField("Şifre (Tekrar)", text: $registerConfirmPassword)
+                .textContentType(.newPassword)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            TextField("Öğrenci Numarası", text: $registerStudentNumber)
+                .keyboardType(.numberPad)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            TextField("Telefon Numarası", text: $registerPhone)
+                .keyboardType(.phonePad)
+                .textContentType(.telephoneNumber)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+            
+            Button(action: {
+                registerUser()
+            }) {
+                Text("Kayıt Ol")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            .disabled(isLoading || !isValidRegistration())
+            
+            if !isValidRegistration() && !registerPassword.isEmpty && !registerConfirmPassword.isEmpty {
+                Text("Şifreler eşleşmiyor!")
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+        }
+        .padding(.horizontal, 30)
+    }
+    
+    // Doğrulama işlevi
+    private func isValidRegistration() -> Bool {
+        return !registerEmail.isEmpty &&
+               !registerPassword.isEmpty &&
+               !registerNameSurname.isEmpty &&
+               !registerStudentNumber.isEmpty &&
+               registerPassword == registerConfirmPassword
+    }
+    
+    // Email ve şifre ile giriş yapma
+    private func loginWithEmailPassword() {
+        isLoading = true
+        errorMessage = nil
+        
+        APIService.shared.loginWithEmailPassword(email: loginEmail, password: loginPassword) { result in
+            isLoading = false
+            
+            switch result {
+            case .success(let user):
+                // Kullanıcı başarıyla giriş yaptı
+                self.currentUser = user
+                modelContext.insert(user)
+                
+                // Oturum durumunu güncelle
+                isAuthenticated = true
+                
+                // Kullanıcı bilgilerine göre yönlendirme yap
+                if !user.department.isEmpty {
+                    // Bölüm bilgisi varsa derslere yönlendir
+                    shouldNavigateToCourses = true
+                } else if let university = user.university, !university.isEmpty {
+                    // Üniversite bilgisi var ama bölüm yoksa, bölüm seçimine yönlendir
+                    shouldNavigateToDepartmentSelection = true
+                } else {
+                    // Üniversite bilgisi yoksa, üniversite seçimine yönlendir
+                    shouldNavigateToUniversitySelection = true
+                }
+                
+            case .failure(let error):
+                errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    // Kayıt olma
+    private func registerUser() {
+        isLoading = true
+        errorMessage = nil
+        
+        APIService.shared.registerUser(
+            email: registerEmail,
+            password: registerPassword,
+            nameSurname: registerNameSurname,
+            studentNumber: registerStudentNumber,
+            phoneNumber: registerPhone
+        ) { result in
+            isLoading = false
+            
+            switch result {
+            case .success(let success):
+                if success {
+                    // Kayıt başarılı, login ekranına geç
+                    viewState = .login
+                    loginEmail = registerEmail
+                    loginPassword = registerPassword
+                    
+                    // Kayıt formunu temizle
+                    registerEmail = ""
+                    registerPassword = ""
+                    registerConfirmPassword = ""
+                    registerNameSurname = ""
+                    registerStudentNumber = ""
+                    registerPhone = ""
+                    
+                    errorMessage = "Kayıt başarılı! Lütfen giriş yapın."
+                } else {
+                    errorMessage = "Kayıt başarısız. Lütfen tekrar deneyin."
+                }
+                
+            case .failure(let error):
+                errorMessage = "Kayıt yapılamadı: \(error.localizedDescription)"
             }
         }
     }
@@ -123,32 +364,36 @@ struct LoginView: View {
             
             switch result {
             case .success(let userInfo):
-                // Kullanıcı modelini oluştur
-                let user = User(
-                    id: userInfo.id,
-                    email: userInfo.email,
-                    name: userInfo.name,
-                    surname: userInfo.surname,
-                    studentNumber: userInfo.studentNumber,
-                    department: userInfo.department
-                )
-                
-                // ModelContext'e ekle
-                modelContext.insert(user)
-                
-                // Oturum durumunu güncelle ve kullanıcıyı kaydet
-                currentUser = user
-                
-                // AppStorage'daki oturum durumu değişkenini güncelle
-                isAuthenticated = true
-                
-                // Üniversite seçim sayfasına yönlendir
-                shouldNavigateToUniversitySelection = true
-                
-                print("Microsoft kullanıcısı ile giriş yapıldı: \(user.name)")
+                // Microsoft ile giriş işlemini API ile gerçekleştir
+                APIService.shared.loginWithMicrosoftAccount(userInfo: userInfo) { result in
+                    switch result {
+                    case .success(let user):
+                        // Kullanıcı modelini oluştur ve ekle
+                        self.currentUser = user
+                        modelContext.insert(user)
+                        
+                        // Oturum durumunu güncelle
+                        isAuthenticated = true
+                        
+                        // Kullanıcı bilgilerine göre yönlendirme yap
+                        if !user.department.isEmpty {
+                            // Bölüm bilgisi varsa derslere yönlendir
+                            shouldNavigateToCourses = true
+                        } else if let university = user.university, !university.isEmpty {
+                            // Üniversite bilgisi var ama bölüm yoksa, bölüm seçimine yönlendir
+                            shouldNavigateToDepartmentSelection = true
+                        } else {
+                            // Üniversite bilgisi yoksa, üniversite seçimine yönlendir
+                            shouldNavigateToUniversitySelection = true
+                        }
+                        
+                    case .failure(let error):
+                        errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
+                    }
+                }
                 
             case .failure(let error):
-                errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
+                errorMessage = "Microsoft ile giriş yapılamadı: \(error.localizedDescription)"
             }
         }
     }
@@ -163,7 +408,8 @@ struct LoginView: View {
             name: "Demo",
             surname: "Kullanıcı",
             studentNumber: "123456",
-            department: "Bilgisayar Mühendisliği"
+            department: "Bilgisayar Mühendisliği",
+            university: "Doğuş Üniversitesi"
         )
         
         // ModelContext'e ekle
@@ -176,20 +422,20 @@ struct LoginView: View {
         currentUser = demoUser
         
         // Demo kullanıcı bilgilerini UserDefaults'a kaydet
-        // Bu şekilde demo kullanıcı girişi de Microsoft kullanıcısı gibi davranabilir
         UserDefaults.standard.set("demo-user-id", forKey: "com.socialuniversity.userId")
         UserDefaults.standard.set("Demo", forKey: "com.socialuniversity.userName")
         UserDefaults.standard.set("Kullanıcı", forKey: "com.socialuniversity.userSurname")
         UserDefaults.standard.set("demo@university.edu.tr", forKey: "com.socialuniversity.userEmail")
         UserDefaults.standard.set("123456", forKey: "com.socialuniversity.userStudentNumber")
         UserDefaults.standard.set("Bilgisayar Mühendisliği", forKey: "com.socialuniversity.userDepartment")
+        UserDefaults.standard.set("Doğuş Üniversitesi", forKey: "com.socialuniversity.userUniversity")
         UserDefaults.standard.set(true, forKey: "com.socialuniversity.isDemo")
         
         // AppStorage'daki oturum durumu değişkenini güncelle
         isAuthenticated = true
         
-        // Doğrudan üniversite seçim sayfasına yönlendir
-        shouldNavigateToUniversitySelection = true
+        // Demo kullanıcı için bölüm ve üniversite bilgisi var, direkt derslere yönlendir
+        shouldNavigateToCourses = true
         
         print("Demo kullanıcı ile giriş yapıldı.")
         isLoading = false
@@ -243,5 +489,5 @@ struct LoginView: View {
 
 #Preview {
     LoginView()
-        .modelContainer(for: [User.self, Course.self, Message.self, Item.self], inMemory: true)
+        .modelContainer(AppSchema.modelContainer())
 } 

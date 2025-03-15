@@ -52,5 +52,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [User.self, Course.self, Message.self, Item.self], inMemory: true)
+        .modelContainer(AppSchema.modelContainer())
 }
