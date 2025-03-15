@@ -116,23 +116,45 @@ struct CourseListView: View {
             .padding()
             
             // Seçilen üniversite ve bölüm bilgisi gösterimi
-            if !selectedUniversity.isEmpty {
-                HStack {
-                    Text("Üniversite: \(selectedUniversity)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    if !savedDepartment.isEmpty {
+            HStack(spacing: 8) {
+                if let university = user.university, !university.isEmpty {
+                    HStack {
+                        Text("Üniversite: \(university)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                    }
+                } else if !selectedUniversity.isEmpty {
+                    HStack {
+                        Text("Üniversite: \(selectedUniversity)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                    }
+                }
+                Spacer()
+                if !user.department.isEmpty {
+                    HStack {
+                        Text("Bölüm: \(user.department)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                    }
+                } else if !savedDepartment.isEmpty {
+                    HStack {
                         Text("Bölüm: \(savedDepartment)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        
+                        Spacer()
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
             }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
             
             // Sekme seçimi
             Picker("Dersler", selection: $selectedTab) {
@@ -255,8 +277,14 @@ struct CourseListView: View {
             Text("Çıkış yaptığınızda oturumunuz sonlandırılacak ve giriş sayfasına yönlendirileceksiniz.")
         }
         .onAppear {
-            // UniversitySelectionView'dan seçilen bölüm varsa, bunu seçili bölüm olarak ayarla
-            if !savedDepartment.isEmpty {
+            // Varsayılan değerleri User modelinden al
+            if let userUniversity = user.university, !userUniversity.isEmpty {
+                selectedUniversity = userUniversity
+            }
+            
+            if !user.department.isEmpty {
+                selectedDepartment = user.department
+            } else if !savedDepartment.isEmpty {
                 selectedDepartment = savedDepartment
             }
             
@@ -264,7 +292,7 @@ struct CourseListView: View {
             loadCachedDataFromUserDefaults()
             
             // Eğer üniversite seçilmişse ve henüz yüklenmemişse, dersleri yükle
-            if !selectedUniversity.isEmpty {
+            if !selectedUniversity.isEmpty || (user.university != nil && !user.university!.isEmpty) {
                 loadCourses()
             }
         }
@@ -367,38 +395,31 @@ struct CourseListView: View {
     }
     
     private func loadCourses(forceRefresh: Bool = false) {
-        // İnternet bağlantısı kontrolü
+        // Zaten yükleme yapılıyorsa çık
+        if isLoading {
+            return
+        }
+        
+        // Eğer üniversite seçilmemişse ve User modelinde de üniversite belirtilmemişse, hata göstermeden çık
+        let effectiveUniversity = selectedUniversity.isEmpty ? user.university ?? "" : selectedUniversity
+        if effectiveUniversity.isEmpty {
+            return
+        }
+
+        // Internet bağlantısını kontrol et
         let isConnected = checkInternetConnection()
         
-        // Önbellek kontrolü yap (forceRefresh true ise yoksay)
-        if !forceRefresh && !cachedCourses.isEmpty && lastCacheUpdate != nil {
-            // Son güncelleme zamanından bu yana geçen süreyi kontrol et
-            let timeSinceLastUpdate = Date().timeIntervalSince(lastCacheUpdate!)
-            
-            // Önbellek süresi dolmadıysa ve önbellekte veri varsa
-            if timeSinceLastUpdate < cacheDuration || !isConnected {
-                print("Önbellekten dersler yüklendi")
-                
-                // Önbellekteki verileri kullanmadan önce tekrarlanan dersleri temizle
-                let uniqueCourses = Array(Dictionary(grouping: cachedCourses) { $0.id }.values.map { $0.first! })
-                
-                // Önbellekteki verilerle SwiftData'yı güncelle
-                try? modelContext.delete(model: Course.self)
-                
-                for course in uniqueCourses {
-                    modelContext.insert(course)
-                }
-                
-                // Bölüm listesini önbellekten al
-                if !cachedDepartments.isEmpty {
-                    self.departments = cachedDepartments
-                }
-                
-                // Çevrimdışı modu göster
-                self.isOfflineMode = !isConnected
-                
-                return
+        // Önbellekteki verinin geçerli olduğunu kontrol et
+        let cacheValid = lastCacheUpdate != nil && 
+            Date().timeIntervalSince(lastCacheUpdate!) < cacheDuration
+        
+        // Önbellek geçerliyse ve zorla yenileme istenmiyorsa, önbellekteki veriyi kullan
+        if !forceRefresh && cacheValid {
+            // Önbellekteki bölüm listesini kullan
+            if !cachedDepartments.isEmpty {
+                departments = cachedDepartments
             }
+            return
         }
         
         // İnternet bağlantısı yoksa ve önbellekte hiç veri yoksa uyarı göster
@@ -422,7 +443,7 @@ struct CourseListView: View {
                 studentId: user.studentNumber,
                 search: trimmedSearchText.isEmpty ? nil : trimmedSearchText,
                 department: selectedDepartment,
-                university: selectedUniversity.isEmpty ? nil : selectedUniversity
+                university: effectiveUniversity.isEmpty ? nil : effectiveUniversity
             ) { result in
                 DispatchQueue.main.async {
                     self.isLoading = false
@@ -477,8 +498,8 @@ struct CourseListView: View {
     
     // İnternet bağlantısı kontrolü yapan yardımcı fonksiyon
     private func checkInternetConnection() -> Bool {
-        // Basit bir kontrol - gerçek uygulamada Reachability gibi bir kütüphane kullanılmalı
-        // Bu örnekte, her zaman bağlantı var gibi davranıyoruz, ancak gerçek uygulamada değiştirilmeli
+        // Basit bir kontrol - gerçek uygulamada daha kapsamlı kontrol mekanizmaları kullanılmalı
+        // Bu örnekte varsayılan olarak bağlantı var kabul ediyoruz
         return true
     }
     

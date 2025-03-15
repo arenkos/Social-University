@@ -1,16 +1,9 @@
-//
-//  ContentView.swift
-//  Social University
-//
-//  Created by Aren Koş on 8.03.2025.
-//
-
 import SwiftUI
 import SwiftData
 
 struct ContentView: View {
     @State private var isShowingLoginView = false
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
@@ -27,22 +20,14 @@ struct ContentView: View {
                 Text("Üniversite öğrencileri için sohbet uygulaması")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
-                Button(action: {
-                    isShowingLoginView = true
-                }) {
-                    Text("Giriş Yap")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal, 40)
-                .padding(.top, 20)
             }
             .padding()
+            .onAppear {
+                // 2 saniye sonra otomatik yönlendirme
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    isShowingLoginView = true
+                }
+            }
             .navigationDestination(isPresented: $isShowingLoginView) {
                 LoginView()
             }
