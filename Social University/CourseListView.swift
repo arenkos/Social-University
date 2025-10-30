@@ -294,6 +294,9 @@ struct CourseListView: View {
             // Eğer üniversite seçilmişse ve henüz yüklenmemişse, dersleri yükle
             if !selectedUniversity.isEmpty || (user.university != nil && !user.university!.isEmpty) {
                 loadCourses()
+            } else if !cachedCourses.isEmpty {
+                // Üniversite seçili değil ama cache var ise en azından listeyi göster
+                self.isOfflineMode = true
             }
         }
         .refreshable {
@@ -396,49 +399,41 @@ struct CourseListView: View {
     
     private func loadCourses(forceRefresh: Bool = false) {
         // Zaten yükleme yapılıyorsa çık
-        if isLoading {
-            return
-        }
-        
-        // Eğer üniversite seçilmemişse ve User modelinde de üniversite belirtilmemişse, hata göstermeden çık
-        let effectiveUniversity = selectedUniversity.isEmpty ? user.university ?? "" : selectedUniversity
-        if effectiveUniversity.isEmpty {
-            return
-        }
+        if isLoading { return }
+
+        // Eğer üniversite seçilmemişse ve User modelinde de üniversite belirtilmemişse, sessizce çık
+        let effectiveUniversity = selectedUniversity.isEmpty ? (user.university ?? "") : selectedUniversity
+        if effectiveUniversity.isEmpty { return }
 
         // Internet bağlantısını kontrol et
         let isConnected = checkInternetConnection()
-        
+
         // Önbellekteki verinin geçerli olduğunu kontrol et
-        let cacheValid = lastCacheUpdate != nil && 
-            Date().timeIntervalSince(lastCacheUpdate!) < cacheDuration
-        
+        let cacheValid = (lastCacheUpdate != nil) && (Date().timeIntervalSince(lastCacheUpdate!) < cacheDuration)
+
         // Önbellek geçerliyse ve zorla yenileme istenmiyorsa, önbellekteki veriyi kullan
         if !forceRefresh && cacheValid {
-            // Önbellekteki bölüm listesini kullan
             if !cachedDepartments.isEmpty {
                 departments = cachedDepartments
             }
             return
         }
-        
+
         // İnternet bağlantısı yoksa ve önbellekte hiç veri yoksa uyarı göster
         if !isConnected && cachedCourses.isEmpty {
             self.showError("İnternet bağlantısı yok ve önbellekte veri bulunamadı")
             self.isOfflineMode = true
             return
         }
-        
-        // Önbellekte veri yoksa veya önbellek süresi dolduysa ve internet varsa, sunucudan yükle
+
+        // İnternet varsa sunucudan yükle, yoksa önbelleği kullan
         if isConnected {
             isLoading = true
             errorMessage = nil
             isOfflineMode = false
-            
-            // Arama metnini temizle
+
             let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Seçilen üniversite ve bölüm bilgilerini API çağrısına ekle
+
             APIService.shared.getCourses(
                 studentId: user.studentNumber,
                 search: trimmedSearchText.isEmpty ? nil : trimmedSearchText,
@@ -447,40 +442,62 @@ struct CourseListView: View {
             ) { result in
                 DispatchQueue.main.async {
                     self.isLoading = false
-                    
+
                     switch result {
                     case .success(let (fetchedCourses, fetchedDepartments)):
-                        // Mevcut dersleri temizle
-                        try? self.modelContext.delete(model: Course.self)
-                        
-                        // Tekrarlanan dersleri temizle
-                        let uniqueCourses = Array(Dictionary(grouping: fetchedCourses) { $0.id }.values.map { $0.first! })
-                        
-                        // Yeni dersleri ekle
-                        for course in uniqueCourses {
-                            self.modelContext.insert(course)
+                        // Tekrarlanan dersleri temizle (id bazlı unique)
+                        let uniqueCourses = Array(Dictionary(grouping: fetchedCourses) { $0.id }.values.compactMap { $0.first })
+
+                        // SwiftData güncellemesi güvenli blok (varsa)
+                        // Tam sil-yükle yerine upsert/diff uygula
+                        do {
+                            // Mevcut Course kayıtlarını çekmeye çalış
+                            let descriptor = FetchDescriptor<Course>()
+                            let existingCourses = try? modelContext.fetch(descriptor) ?? []
+
+                            // Index by id
+                            var existingById: [String: Course] = [:]
+                            existingCourses?.forEach { existingById[$0.id] = $0 }
+
+                            // Upsert
+                            for newCourse in uniqueCourses {
+                                if let existing = existingById[newCourse.id] {
+                                    // Güncelle
+                                    existing.courseCode = newCourse.courseCode
+                                    existing.courseName = newCourse.courseName
+                                    existing.departmentName = newCourse.departmentName
+                                    existing.isEnrolled = newCourse.isEnrolled
+                                } else {
+                                    // Ekle
+                                    self.modelContext.insert(newCourse)
+                                }
+                            }
+
+                            // Silinecekler (sunucuda yoksa)
+                            let incomingIds = Set(uniqueCourses.map { $0.id })
+                            existingCourses?.forEach { existing in
+                                if !incomingIds.contains(existing.id) {
+                                    try? self.modelContext.delete(existing)
+                                }
+                            }
                         }
-                        
-                        // Önbelleğe al
+
+                        // Önbelleğe al ve kalıcı kaydet
                         self.cachedCourses = uniqueCourses
                         self.cachedDepartments = fetchedDepartments
                         self.lastCacheUpdate = Date()
-                        
-                        // Kalıcı önbelleğe kaydet
                         self.saveCachedDataToUserDefaults()
-                        
+
                         // Bölüm listesini güncelle
                         if !fetchedDepartments.isEmpty {
                             self.departments = fetchedDepartments
-                            
-                            // Eğer daha önce seçilmiş bir bölüm varsa ve bu bölüm listede yoksa, seçimi temizle
                             if let selectedDepartment = self.selectedDepartment, !fetchedDepartments.contains(selectedDepartment) {
                                 self.selectedDepartment = nil
                             }
                         }
-                        
+
                     case .failure(let error):
-                        // Hata durumunda önbellekteki verileri kullan
+                        // Hata durumunda önbelleği kullan
                         if !self.cachedCourses.isEmpty {
                             self.isOfflineMode = true
                             self.showError("Sunucuya erişilemiyor, önbellekteki veriler gösteriliyor")
@@ -527,9 +544,10 @@ struct CourseListView: View {
                         self.cachedCourses[index].isEnrolled = true
                     }
                     
-                    // SwiftData'da dersi güncelle
-                    if let dbCourse = self.courses.first(where: { $0.id == course.id }) {
-                        dbCourse.isEnrolled = true
+                    // SwiftData'da dersi güncelle (güvenli)
+                    if let descriptor = try? FetchDescriptor<Course>(predicate: #Predicate { $0.id == course.id }),
+                       let match = try? self.modelContext.fetch(descriptor).first {
+                        match.isEnrolled = true
                     }
                     
                 case .failure(let error):
@@ -565,9 +583,10 @@ struct CourseListView: View {
                         self.cachedCourses[index].isEnrolled = false
                     }
                     
-                    // SwiftData'da dersi güncelle
-                    if let dbCourse = self.courses.first(where: { $0.id == course.id }) {
-                        dbCourse.isEnrolled = false
+                    // SwiftData'da dersi güncelle (güvenli)
+                    if let descriptor = try? FetchDescriptor<Course>(predicate: #Predicate { $0.id == course.id }),
+                       let match = try? self.modelContext.fetch(descriptor).first {
+                        match.isEnrolled = false
                     }
                     
                 case .failure(let error):
@@ -604,6 +623,16 @@ struct CourseListView: View {
                 UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userDepartment")
                 UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
                 UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userInfo")
+                
+                // UserDefaults'taki tüm kullanıcı bilgilerini temizle
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userId")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userName")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userSurname")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userEmail")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userStudentNumber")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userDepartment")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userUniversity")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
                 
                 // Önbellek verilerini de temizle
                 UserDefaults.standard.removeObject(forKey: self.kCachedCoursesKey)

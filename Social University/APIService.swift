@@ -75,8 +75,21 @@ class APIService {
                 let name = (userData["name_surname"] as? String)?.components(separatedBy: " ").first ?? ""
                 let surname = (userData["name_surname"] as? String)?.components(separatedBy: " ").last ?? ""
                 let studentNumber = userData["student_number"] as? String ?? ""
-                let department = userData["department"] as? String ?? ""
-                let university = userData["university"] as? String ?? ""
+                
+                // NULL değerleri boş string olarak işle ve debug için log
+                let departmentFromAPI = userData["department"] as? String
+                let universityFromAPI = userData["university"] as? String
+                
+                let department = (departmentFromAPI?.isEmpty == false) ? departmentFromAPI! : ""
+                let university = (universityFromAPI?.isEmpty == false) ? universityFromAPI! : ""
+                
+                print("API'den gelen kullanıcı verileri:")
+                print("- ID: \(id)")
+                print("- Email: \(email)")
+                print("- Department (raw): \(departmentFromAPI ?? "nil")")
+                print("- University (raw): \(universityFromAPI ?? "nil")")
+                print("- Department (processed): '\(department)'")
+                print("- University (processed): '\(university)'")
                 
                 let user = User(
                     id: id,
@@ -674,10 +687,15 @@ extension APIService {
                 
                 DispatchQueue.main.async {
                     completion(.success(user))
+                    print("login değerleri alındı")
+                    print("deparment: \(user.department)")
+                    print("universite: \(user.university)")
                 }
             } catch {
                 DispatchQueue.main.async {
                     completion(.failure(error))
+                    
+                    print("login değerleri alınamadı")
                 }
             }
         }
@@ -825,15 +843,15 @@ extension APIService {
         task.resume()
     }
     
-    // Kullanıcı profil bilgilerini güncelleme
-    func updateUser(userId: String, university: String?, department: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
+    // Kullanıcı profil bilgilerini güncelleme (mevcut user ID ile)
+    func updateUserWithDatabaseId(databaseId: String, university: String?, department: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
         let url = URL(string: "\(baseURL)/api/update_user.php")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         var parameters: [String: Any] = [
-            "user_id": userId
+            "user_id": databaseId  // Veritabanından aldığımız gerçek ID
         ]
         
         if let university = university {
@@ -844,12 +862,199 @@ extension APIService {
             parameters["department"] = department
         }
         
+        print("📡 Database ID ile güncelleme isteği:")
+        print("   - Database ID: \(databaseId)")
+        print("   - University: \(university ?? "nil")")
+        print("   - Department: \(department ?? "nil")")
+        
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: parameters)
+            let jsonData = try JSONSerialization.data(withJSONObject: parameters)
+            request.httpBody = jsonData
+            
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                print("📡 Gönderilen JSON: \(jsonString)")
+            }
         } catch {
+            print("❌ JSON oluşturma hatası: \(error)")
             completion(.failure(error))
             return
         }
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 Database ID Update HTTP Status: \(httpResponse.statusCode)")
+            }
+            
+            guard let data = data else {
+                print("❌ No data received")
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
+                }
+                return
+            }
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📡 Database ID Update Response: \(responseString)")
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                print("📡 Database ID Update JSON: \(String(describing: json))")
+                
+                guard let success = json?["success"] as? Bool else {
+                    let message = json?["message"] as? String ?? "Sunucu yanıtında 'success' alanı bulunamadı"
+                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+                }
+                
+                DispatchQueue.main.async {
+                    completion(.success(success))
+                }
+            } catch {
+                print("❌ JSON parsing error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+        
+        task.resume()
+    }
+    
+    // Kullanıcı profil bilgilerini güncelleme (mevcut fonksiyon)
+    func updateUser(userId: String, email: String? = nil, university: String?, department: String?, completion: @escaping (Result<Bool, Error>) -> Void) {
+        let url = URL(string: "\(baseURL)/api/update_user.php")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var parameters: [String: Any] = [
+            "user_id": userId
+        ]
+        
+        // Email parametresini de ekle (bazı API'ler bunu gerektirebilir)
+        if let email = email {
+            parameters["email"] = email
+        }
+        
+        if let university = university {
+            parameters["university"] = university
+        }
+        
+        if let department = department {
+            parameters["department"] = department
+        }
+        
+        print("📡 API Request URL: \(url.absoluteString)")
+        print("📡 Kullanıcı güncelleme isteği gönderiliyor:")
+        print("   - User ID: \(userId)")
+        print("   - Email: \(email ?? "nil")")
+        print("   - University: \(university ?? "nil")")
+        print("   - Department: \(department ?? "nil")")
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: parameters)
+            request.httpBody = jsonData
+            
+            // Debug: Gönderilen JSON'u yazdır
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                print("📡 Gönderilen JSON: \(jsonString)")
+            }
+        } catch {
+            print("❌ JSON oluşturma hatası: \(error)")
+            completion(.failure(error))
+            return
+        }
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+            
+            // HTTP yanıtını kontrol et
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 HTTP Status Code: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode != 200 {
+                    let error = NSError(domain: "APIService", 
+                                      code: httpResponse.statusCode, 
+                                      userInfo: [NSLocalizedDescriptionKey: "HTTP error \(httpResponse.statusCode)"])
+                    DispatchQueue.main.async {
+                        completion(.failure(error))
+                    }
+                    return
+                }
+            }
+            
+            guard let data = data else {
+                print("❌ No data received")
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
+                }
+                return
+            }
+            
+            // Debug: Ham yanıtı yazdır
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📡 Sunucu yanıtı (raw): \(responseString)")
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                print("📡 Ayrıştırılan JSON: \(String(describing: json))")
+                
+                guard let success = json?["success"] as? Bool else {
+                    let message = json?["message"] as? String ?? "Sunucu yanıtında 'success' alanı bulunamadı"
+                    print("❌ JSON parsing error: \(message)")
+                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+                }
+                
+                print("📡 Kullanıcı güncelleme sonucu: \(success)")
+                if let message = json?["message"] as? String {
+                    print("📡 Sunucu mesajı: \(message)")
+                }
+                
+                // Debug: Tüm yanıt verilerini yazdır
+                if let allData = json {
+                    for (key, value) in allData {
+                        print("📡 Response[\(key)]: \(value)")
+                    }
+                }
+                
+                DispatchQueue.main.async {
+                    completion(.success(success))
+                }
+            } catch {
+                print("❌ JSON parsing error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+        
+        task.resume()
+    }
+    
+    // MARK: - Debug ve Test Fonksiyonları
+    
+    /// API bağlantısını test etmek için basit bir fonksiyon
+    func testConnection(completion: @escaping (Result<String, Error>) -> Void) {
+        let url = URL(string: "\(baseURL)/api/test.php")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        print("🔍 API bağlantı testi yapılıyor: \(url.absoluteString)")
         
         let task = session.dataTask(with: request) { data, response, error in
             if let error = error {
@@ -859,23 +1064,90 @@ extension APIService {
                 return
             }
             
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔍 Test HTTP Status: \(httpResponse.statusCode)")
+            }
+            
             guard let data = data else {
                 DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Veri alınamadı"])))
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Test: Veri alınamadı"])))
                 }
                 return
             }
             
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("🔍 Test Response: \(responseString)")
+                DispatchQueue.main.async {
+                    completion(.success(responseString))
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Test: Yanıt çözülemedi"])))
+                }
+            }
+        }
+        
+        task.resume()
+    }
+    
+    /// Kullanıcı bilgilerini sunucudan çekmek için test fonksiyonu
+    func getUserInfo(userId: String? = nil, email: String? = nil, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/get_user.php")!
+        
+        var queryItems: [URLQueryItem] = []
+        
+        // PHP kodu 'id' parametresini bekliyor ama bu email olmalı
+        if let email = email {
+            queryItems.append(URLQueryItem(name: "id", value: email)) // 'id' parametresi aslında email
+        } else if let userId = userId {
+            queryItems.append(URLQueryItem(name: "user_id", value: userId))
+        }
+        
+        // Eğer hiç parametre yoksa hata ver
+        if queryItems.isEmpty {
+            DispatchQueue.main.async {
+                completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "user_id veya email parametresi gerekli"])))
+            }
+            return
+        }
+        
+        urlComponents.queryItems = queryItems
+        
+        let url = urlComponents.url!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        print("🔍 Kullanıcı bilgileri çekiliyor: \(url.absoluteString)")
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔍 Get User HTTP Status: \(httpResponse.statusCode)")
+            }
+            
+            guard let data = data else {
+                DispatchQueue.main.async {
+                    completion(.failure(NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Kullanıcı verisi alınamadı"])))
+                }
+                return
+            }
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("🔍 Get User Response: \(responseString)")
+            }
+            
             do {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                
-                guard let success = json?["success"] as? Bool else {
-                    let message = json?["message"] as? String ?? "Bilinmeyen hata"
-                    throw NSError(domain: "APIService", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
-                }
+                print("🔍 Get User JSON: \(String(describing: json))")
                 
                 DispatchQueue.main.async {
-                    completion(.success(success))
+                    completion(.success(json ?? [:]))
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -885,5 +1157,49 @@ extension APIService {
         }
         
         task.resume()
+    }
+    
+    /// UserDefaults'taki kullanıcı tercihlerini temizler
+    static func clearUserDefaults() {
+        let userDefaults = UserDefaults.standard
+        let keysToRemove = [
+            "com.socialuniversity.university",
+            "com.socialuniversity.department",
+            "com.socialuniversity.isAuthenticated",
+            "com.socialuniversity.userId",
+            "com.socialuniversity.userEmail",
+            "com.socialuniversity.userName",
+            "com.socialuniversity.userSurname",
+            "com.socialuniversity.userStudentNumber"
+        ]
+        
+        for key in keysToRemove {
+            userDefaults.removeObject(forKey: key)
+        }
+        
+        userDefaults.synchronize()
+        print("UserDefaults temizlendi")
+    }
+    
+    /// Mevcut UserDefaults değerlerini console'a yazdırır
+    static func debugUserDefaults() {
+        let userDefaults = UserDefaults.standard
+        let keys = [
+            "com.socialuniversity.university",
+            "com.socialuniversity.department",
+            "com.socialuniversity.isAuthenticated",
+            "com.socialuniversity.userId",
+            "com.socialuniversity.userEmail",
+            "com.socialuniversity.userName",
+            "com.socialuniversity.userSurname",
+            "com.socialuniversity.userStudentNumber"
+        ]
+        
+        print("=== UserDefaults Debug ===")
+        for key in keys {
+            let value = userDefaults.object(forKey: key) ?? "nil"
+            print("\(key): \(value)")
+        }
+        print("========================")
     }
 } 

@@ -20,8 +20,9 @@ struct LoginView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     
-    // Uygulama genelinde oturum durumunu takip eden değişkenlere erişim
-    @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
+    // ✅ Authentication state callback'i
+    var onAuthenticationChange: ((Bool) -> Void)?
+    
     @State private var currentUser: User?
     
     // Görünüm Durumu
@@ -47,6 +48,28 @@ struct LoginView: View {
     enum ViewState {
         case login
         case register
+    }
+    
+    // ✅ Kullanıcı bilgilerini UserDefaults'a kaydetme fonksiyonu
+    private func saveUserToDefaults(_ user: User) {
+        UserDefaults.standard.set(user.id, forKey: "com.socialuniversity.userId")
+        UserDefaults.standard.set(user.email, forKey: "com.socialuniversity.userEmail")
+        UserDefaults.standard.set(user.name, forKey: "com.socialuniversity.userName")
+        UserDefaults.standard.set(user.surname, forKey: "com.socialuniversity.userSurname")
+        UserDefaults.standard.set(user.studentNumber, forKey: "com.socialuniversity.userStudentNumber")
+        UserDefaults.standard.set(user.department, forKey: "com.socialuniversity.department")
+        UserDefaults.standard.set(user.university ?? "", forKey: "com.socialuniversity.university")
+        
+        // ✅ EN ÖNEMLİSİ: isAuthenticated'ı da kaydet
+        UserDefaults.standard.set(true, forKey: "com.socialuniversity.isAuthenticated")
+        
+        print("✅ Kullanıcı bilgileri UserDefaults'a kaydedildi:")
+        print("   - ID: \(user.id)")
+        print("   - Email: \(user.email)")
+        print("   - Name: \(user.name) \(user.surname)")
+        print("   - University: \(user.university ?? "")")
+        print("   - Department: \(user.department)")
+        print("   - isAuthenticated: true")
     }
     
     var body: some View {
@@ -115,8 +138,13 @@ struct LoginView: View {
             .navigationDestination(isPresented: $shouldNavigateToDepartmentSelection) {
                 if let user = currentUser {
                     // Bölüm seçim ekranına yönlendir
-                    // Örnek: DepartmentSelectionView(user: user)
-                    Text("Bölüm Seçim Sayfası Yükleniyor...")
+                    // Kullanıcının üniversitesi zaten seçili, sadece bölüm seçmeye yönlendir
+                    UniversitySelectionView(user: user)
+                        .onAppear {
+                            // UniversitySelectionView içinde önceden seçilen üniversiteyi kullanacak
+                            // ve otomatik olarak bölüm seçimine yönlendirecek
+                            UserDefaults.standard.set(user.university, forKey: "com.socialuniversity.university")
+                        }
                 }
             }
             .navigationDestination(isPresented: $shouldNavigateToCourses) {
@@ -133,9 +161,9 @@ struct LoginView: View {
         VStack(spacing: 20) {
             VStack(spacing: 15) {
                 TextField("E-posta", text: $loginEmail)
-                    .autocapitalization(.none)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
@@ -194,6 +222,21 @@ struct LoginView: View {
                 .disabled(isLoading)
             }
             .padding(.horizontal, 30)
+            
+            /*
+            Button(action: {
+                logout()
+            }) {
+                Text("Çıkış Yap")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            .padding(.horizontal, 30)
+             */
         }
     }
     
@@ -207,9 +250,9 @@ struct LoginView: View {
                 .cornerRadius(10)
             
             TextField("E-posta", text: $registerEmail)
-                .autocapitalization(.none)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
+                .textInputAutocapitalization(.never)
                 .padding()
                 .background(Color(.systemGray6))
                 .cornerRadius(10)
@@ -284,8 +327,11 @@ struct LoginView: View {
                 self.currentUser = user
                 modelContext.insert(user)
                 
-                // Oturum durumunu güncelle
-                isAuthenticated = true
+                // ✅ Oturum durumunu güncelle
+                onAuthenticationChange?(true)
+                
+                // ✅ Kullanıcı bilgilerini UserDefaults'a kaydet
+                self.saveUserToDefaults(user)
                 
                 // Kullanıcı bilgilerine göre yönlendirme yap
                 if !user.department.isEmpty {
@@ -350,6 +396,7 @@ struct LoginView: View {
         isLoading = true
         errorMessage = nil
         
+        #if canImport(UIKit)
         // UIViewController'ı elde etme
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
@@ -357,45 +404,57 @@ struct LoginView: View {
             isLoading = false
             return
         }
-        
+
         // Microsoft kimlik doğrulama işlemi
         MicrosoftAuthManager.shared.signIn(viewController: rootViewController) { result in
             isLoading = false
-            
+
             switch result {
             case .success(let userInfo):
                 // Microsoft ile giriş işlemini API ile gerçekleştir
-                APIService.shared.loginWithMicrosoftAccount(userInfo: userInfo) { result in
-                    switch result {
-                    case .success(let user):
-                        // Kullanıcı modelini oluştur ve ekle
-                        self.currentUser = user
-                        modelContext.insert(user)
-                        
-                        // Oturum durumunu güncelle
-                        isAuthenticated = true
-                        
-                        // Kullanıcı bilgilerine göre yönlendirme yap
-                        if !user.department.isEmpty {
-                            // Bölüm bilgisi varsa derslere yönlendir
-                            shouldNavigateToCourses = true
-                        } else if let university = user.university, !university.isEmpty {
-                            // Üniversite bilgisi var ama bölüm yoksa, bölüm seçimine yönlendir
-                            shouldNavigateToDepartmentSelection = true
-                        } else {
-                            // Üniversite bilgisi yoksa, üniversite seçimine yönlendir
-                            shouldNavigateToUniversitySelection = true
+                APIService.shared.loginWithMicrosoftAccount(userInfo: userInfo) { apiResult in // 'result' ismini 'apiResult' olarak değiştirdim
+                    DispatchQueue.main.async { // API yanıtı sonrası UI güncellemesi için
+                        switch apiResult {
+                        case .success(let user):
+                            // Kullanıcı modelini oluştur ve ekle
+                            self.currentUser = user
+                            modelContext.insert(user)
+
+                            // ✅ Oturum durumunu güncelle
+                            onAuthenticationChange?(true)
+                            
+                            // ✅ Kullanıcı bilgilerini UserDefaults'a kaydet
+                            self.saveUserToDefaults(user)
+
+                            // Kullanıcı bilgilerine göre yönlendirme yap
+                            if !user.department.isEmpty {
+                                // Bölüm bilgisi varsa derslere yönlendir
+                                shouldNavigateToCourses = true
+                            } else if let university = user.university, !university.isEmpty {
+                                // Üniversite bilgisi var ama bölüm yoksa, bölüm seçimine yönlendir
+                                shouldNavigateToDepartmentSelection = true
+                            } else {
+                                // Üniversite bilgisi yoksa, üniversite seçimine yönlendir
+                                shouldNavigateToUniversitySelection = true
+                            }
+
+                        case .failure(let error):
+                            errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
                         }
-                        
-                    case .failure(let error):
-                        errorMessage = "Giriş yapılamadı: \(error.localizedDescription)"
                     }
                 }
-                
+
             case .failure(let error):
-                errorMessage = "Microsoft ile giriş yapılamadı: \(error.localizedDescription)"
+                 DispatchQueue.main.async { // Hata mesajı UI'da gösterilecek
+                    errorMessage = "Microsoft ile giriş yapılamadı: \(error.localizedDescription)"
+                 }
             }
         }
+        #else
+        // UIKit olmayan platformlar için hata veya alternatif akış
+        errorMessage = "Microsoft ile giriş bu platformda desteklenmiyor."
+        isLoading = false
+        #endif
     }
     
     private func createDemoUser() {
@@ -408,7 +467,7 @@ struct LoginView: View {
             name: "Demo",
             surname: "Kullanıcı",
             studentNumber: "123456",
-            department: "Bilgisayar Mühendisliği",
+            department: "Bilgisayar ",
             university: "Doğuş Üniversitesi"
         )
         
@@ -421,18 +480,12 @@ struct LoginView: View {
         // Kullanıcıyı ayarla
         currentUser = demoUser
         
-        // Demo kullanıcı bilgilerini UserDefaults'a kaydet
-        UserDefaults.standard.set("demo-user-id", forKey: "com.socialuniversity.userId")
-        UserDefaults.standard.set("Demo", forKey: "com.socialuniversity.userName")
-        UserDefaults.standard.set("Kullanıcı", forKey: "com.socialuniversity.userSurname")
-        UserDefaults.standard.set("demo@university.edu.tr", forKey: "com.socialuniversity.userEmail")
-        UserDefaults.standard.set("123456", forKey: "com.socialuniversity.userStudentNumber")
-        UserDefaults.standard.set("Bilgisayar Mühendisliği", forKey: "com.socialuniversity.userDepartment")
-        UserDefaults.standard.set("Doğuş Üniversitesi", forKey: "com.socialuniversity.userUniversity")
-        UserDefaults.standard.set(true, forKey: "com.socialuniversity.isDemo")
+        // ✅ AppStorage'daki oturum durumu değişkenini güncelle
+        onAuthenticationChange?(true)
         
-        // AppStorage'daki oturum durumu değişkenini güncelle
-        isAuthenticated = true
+        // ✅ Kullanıcı bilgilerini UserDefaults'a kaydet
+        saveUserToDefaults(demoUser)
+        UserDefaults.standard.set(true, forKey: "com.socialuniversity.isDemo")
         
         // Demo kullanıcı için bölüm ve üniversite bilgisi var, direkt derslere yönlendir
         shouldNavigateToCourses = true
@@ -457,7 +510,7 @@ struct LoginView: View {
                 id: "msg1",
                 content: "Merhaba, bu derse hoş geldiniz!",
                 timestamp: Date().addingTimeInterval(-86400), // 1 gün önce
-                senderId: nil,
+                senderId: nil as String?,
                 courseId: "BIL101"
             ),
             Message(
@@ -471,7 +524,7 @@ struct LoginView: View {
                 id: "msg3",
                 content: "Ödevler gelecek hafta Cuma günü teslim edilecek.",
                 timestamp: Date().addingTimeInterval(-21600), // 6 saat önce
-                senderId: nil,
+                senderId: nil as String?,
                 courseId: "BIL101"
             )
         ]
@@ -485,9 +538,37 @@ struct LoginView: View {
             modelContext.insert(message)
         }
     }
+    
+    // ✅ Çıkış yapma fonksiyonu
+    private func logout() {
+        // UserDefaults'taki tüm kullanıcı bilgilerini temizle
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userId")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userName")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userSurname")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userEmail")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.userStudentNumber")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.department")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.university")
+        UserDefaults.standard.removeObject(forKey: "com.socialuniversity.isDemo")
+        
+        // ✅ EN ÖNEMLİSİ: isAuthenticated'ı false yap
+        UserDefaults.standard.set(false, forKey: "com.socialuniversity.isAuthenticated")
+        
+        // ✅ Oturum durumunu güncelle
+        onAuthenticationChange?(false)
+        
+        // ✅ Kullanıcıyı temizle
+        currentUser = nil
+        
+        // Giriş ekranına yönlendir
+        viewState = .login
+        
+        print("✅ Kullanıcı çıkış yaptı, tüm veriler temizlendi")
+        print("   - isAuthenticated: false")
+    }
 }
 
 #Preview {
-    LoginView()
+    LoginView { _ in }
         .modelContainer(AppSchema.modelContainer())
 } 

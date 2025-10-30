@@ -232,15 +232,23 @@ struct UniversitySelectionView: View {
     @State private var departmentSearchText = ""
     
     // Kullanıcı seçimlerini kaydetmek için UserDefaults
-    @AppStorage("selectedUniversity") var savedUniversity = ""
-    @AppStorage("selectedDepartment") var savedDepartment = ""
+    @AppStorage("com.socialuniversity.university") var savedUniversity = ""
+    @AppStorage("com.socialuniversity.department") var savedDepartment = ""
     
     // Bölüm listesini yüklemek için API çağrısı yapan fonksiyon
     private func loadDepartments(for university: String) {
         isLoadingDepartments = true
         departmentError = nil
         
+        // Üniversite adını URL için uygun şekilde kodla
+        guard let encodedUniversity = university.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            departmentError = "Üniversite adı kodlanamadı."
+            isLoadingDepartments = false
+            return
+        }
+        
         // API ile bölümleri çek
+        let urlString = "https://aryazilimdanismanlik.com/social/get_departments.php?university=\(encodedUniversity)"
         APIService.shared.getDepartments(university: university) { result in
             DispatchQueue.main.async {
                 self.isLoadingDepartments = false
@@ -302,35 +310,120 @@ struct UniversitySelectionView: View {
     
     // Devam et ve bölüm seçimini kaydet
     private func saveDepartmentSelection() {
-        // Seçimleri UserDefaults'a kaydet
-        savedUniversity = selectedUniversity ?? ""
-        savedDepartment = selectedDepartment ?? ""
+        guard let selectedUniversity = selectedUniversity, let selectedDepartment = selectedDepartment else {
+            print("Üniversite veya bölüm seçilmedi!")
+            return
+        }
         
-        // Kullanıcı modelini güncelle
+        print("🚀 Üniversite ve bölüm seçimi kaydediliyor...")
+        print("📍 Seçilen Üniversite: \(selectedUniversity)")
+        print("📍 Seçilen Bölüm: \(selectedDepartment)")
+        print("👤 Kullanıcı ID: \(user.id)")
+        
+        // Önce local modeli güncelle
         user.university = selectedUniversity
-        user.department = selectedDepartment ?? ""
+        user.department = selectedDepartment
         
-        // Veritabanına kaydet
-        if let university = selectedUniversity, let department = selectedDepartment {
-            APIService.shared.updateUser(userId: user.id, university: university, department: department) { result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success(_):
-                        print("Kullanıcı bilgileri başarıyla güncellendi")
-                        // Ders listesine yönlendir
-                        self.navigateToCourseList = true
-                    case .failure(let error):
-                        print("Kullanıcı bilgileri güncellenirken hata oluştu: \(error.localizedDescription)")
-                        // Hata olsa bile ders listesine yönlendir, çünkü local olarak kaydedildi
-                        self.navigateToCourseList = true
+        // SwiftData context'i kaydet
+        do {
+            try modelContext.save()
+            print("✅ SwiftData başarıyla kaydedildi")
+        } catch {
+            print("❌ SwiftData kaydetme hatası: \(error.localizedDescription)")
+        }
+        
+        // Seçimleri UserDefaults'a kaydet
+        savedUniversity = selectedUniversity
+        savedDepartment = selectedDepartment
+        print("💾 UserDefaults kaydedildi: University=\(savedUniversity), Department=\(savedDepartment)")
+
+        // API'ye kaydet
+        // İlk önce kullanıcı bilgilerini al ve gerçek database ID'sini bul
+        print("📞 Kullanıcı bilgilerini alıp gerçek ID'yi bulalım...")
+        APIService.shared.getUserInfo(email: user.email) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let userInfo):
+                    print("🔍 Email ile kullanıcı bilgileri başarıyla alındı")
+                    
+                    // Başarılı yanıt kontrolü - API'de 'status' kullanılıyor, 'success' değil
+                    if let success = userInfo["status"] as? Bool, success,
+                       let data = userInfo["data"] as? [String: Any],
+                       let databaseId = data["id"] as? Int {
+                        
+                        let databaseIdString = String(databaseId)
+                        print("🎯 Veritabanı ID'si bulundu: \(databaseIdString)")
+                        
+                        // Gerçek database ID ile güncelleme yap
+                        self.tryUpdateWithDatabaseId(databaseIdString)
+                        
+                    } else {
+                        print("⚠️ Kullanıcı bilgilerinden ID çıkarılamadı, fallback ile devam ediliyor...")
+                        self.tryUpdateWithUserId()
                     }
+                    
+                case .failure(let error):
+                    print("❌ Kullanıcı bilgileri alınamadı: \(error.localizedDescription)")
+                    print("🔄 Fallback ile devam ediliyor...")
+                    self.tryUpdateWithUserId()
                 }
             }
-        } else {
-            // Üniversite veya bölüm seçilmemişse hata göster veya varsayılan değerler kullan
-            print("Üniversite veya bölüm seçilmedi!")
-            // Yine de ders listesine yönlendir
-            navigateToCourseList = true
+        }
+    }
+    
+    // Database ID ile güncelleme deneme fonksiyonu
+    private func tryUpdateWithDatabaseId(_ databaseId: String) {
+        guard let selectedUniversity = selectedUniversity, let selectedDepartment = selectedDepartment else {
+            print("❌ Seçilen değerler kayboldu!")
+            return
+        }
+        
+        APIService.shared.updateUserWithDatabaseId(databaseId: databaseId, university: selectedUniversity, department: selectedDepartment) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let isSuccess):
+                    if isSuccess {
+                        print("✅ Database ID ile API başarıyla güncellendi!")
+                        self.navigateToCourseList = true
+                    } else {
+                        print("⚠️ Database ID ile de API güncelleme başarısız, UUID ile deneniyor...")
+                        self.tryUpdateWithUserId()
+                    }
+                    
+                case .failure(let error):
+                    print("❌ Database ID ile API güncelleme hatası: \(error.localizedDescription)")
+                    print("🔄 UUID ile deneniyor...")
+                    self.tryUpdateWithUserId()
+                }
+            }
+        }
+    }
+    
+    // User ID ile güncelleme deneme fonksiyonu
+    private func tryUpdateWithUserId() {
+        guard let selectedUniversity = selectedUniversity, let selectedDepartment = selectedDepartment else {
+            print("❌ Seçilen değerler kayboldu!")
+            return
+        }
+        
+        APIService.shared.updateUser(userId: user.id, email: user.email, university: selectedUniversity, department: selectedDepartment) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let isSuccess):
+                    if isSuccess {
+                        print("✅ User ID ile API başarıyla güncellendi")
+                    } else {
+                        print("⚠️ User ID ile de API güncelleme başarısız")
+                    }
+                    // Her durumda devam et (local'da zaten kaydedildi)
+                    self.navigateToCourseList = true
+                    
+                case .failure(let error):
+                    print("❌ User ID ile de API güncelleme hatası: \(error.localizedDescription)")
+                    // Hata durumunda bile devam et, çünkü local'da kaydedildi
+                    self.navigateToCourseList = true
+                }
+            }
         }
     }
     
@@ -447,18 +540,54 @@ struct UniversitySelectionView: View {
                         
                         // Bölüm seçimi tamamlandığında gösterilecek ileri butonu
                         if selectedDepartment != nil {
-                            Button(action: {
-                                saveDepartmentSelection()
-                            }) {
-                                Text("Devam Et")
-                                    .fontWeight(.semibold)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(10)
+                            VStack {
+                                // Debug bilgisi göster
+                                Text("Debug: User ID = \(user.id)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.top, 4)
+                                
+                                Text("Debug: Email = \(user.email)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                
+                                Button(action: {
+                                    // Debug: Kullanıcı bilgilerini sunucudan çek (test için)
+                                    // İlk önce email ile dene
+                                    APIService.shared.getUserInfo(email: user.email) { result in
+                                        switch result {
+                                        case .success(let userInfo):
+                                            print("🔍 Email ile kullanıcı bilgileri: \(userInfo)")
+                                            
+                                            // Eğer email ile başarısız olursa userId ile dene
+                                            if let success = userInfo["success"] as? Bool, !success {
+                                                print("🔍 Email ile başarısız, User ID ile deneniyor...")
+                                                APIService.shared.getUserInfo(userId: user.id) { result2 in
+                                                    switch result2 {
+                                                    case .success(let userInfo2):
+                                                        print("🔍 User ID ile kullanıcı bilgileri: \(userInfo2)")
+                                                    case .failure(let error2):
+                                                        print("🔍 User ID ile de başarısız: \(error2.localizedDescription)")
+                                                    }
+                                                }
+                                            }
+                                        case .failure(let error):
+                                            print("🔍 Kullanıcı bilgileri çekilemedi: \(error.localizedDescription)")
+                                        }
+                                    }
+                                    
+                                    saveDepartmentSelection()
+                                }) {
+                                    Text("Devam Et")
+                                        .fontWeight(.semibold)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(10)
+                                }
+                                .padding(.horizontal)
                             }
-                            .padding()
                         }
                     }
                 }
@@ -469,24 +598,74 @@ struct UniversitySelectionView: View {
             }
         }
         .onAppear {
-            // Daha önce seçilmiş değerler varsa yükle
-            if !savedUniversity.isEmpty {
-                selectedUniversity = savedUniversity
-            }
-            
-            if !savedDepartment.isEmpty {
-                selectedDepartment = savedDepartment
-                // Önceden seçim yapıldıysa ve doğrulanırsa direkt olarak ders listesine yönlendir
-                if !savedUniversity.isEmpty && !savedDepartment.isEmpty {
-                    // Kullanıcı bilgilerini güncelle
-                    user.department = savedDepartment
-                    navigateToCourseList = true
+            // API bağlantı testi (sadece debug için)
+            APIService.shared.testConnection { result in
+                switch result {
+                case .success(let response):
+                    print("🔍 API Test Başarılı: \(response)")
+                case .failure(let error):
+                    print("🔍 API Test Hatası: \(error.localizedDescription)")
                 }
             }
+            
+            // ÖNCE: Kullanıcının gerçek verilerini kontrol et
+            // Eğer kullanıcının veritabanındaki university veya department değerleri boş ise
+            // UserDefaults'u da temizle
+            if user.university?.isEmpty != false || user.department.isEmpty {
+                // UserDefaults'taki eski değerleri temizle
+                savedUniversity = ""
+                savedDepartment = ""
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.university")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.department")
+                print("Kullanıcı verileri boş olduğu için UserDefaults temizlendi")
+            }
+            
+            // Kullanıcının mevcut verilerini kontrol et
+            if let userUniversity = user.university, !userUniversity.isEmpty {
+                selectedUniversity = userUniversity
+                savedUniversity = userUniversity
+                
+                if !user.department.isEmpty {
+                    selectedDepartment = user.department
+                    savedDepartment = user.department
+                    
+                    // Hem üniversite hem bölüm seçili ise direkt ders listesine git
+                    navigateToCourseList = true
+                    return
+                } else {
+                    // Üniversite var ama bölüm yok, bölüm seçimine git
+                    currentStep = 1
+                    loadDepartments(for: userUniversity)
+                    return
+                }
+            }
+            
+            // Kullanıcı verileri boş ise, UserDefaults'tan da kontrol et (güvenlik için)
+            let userDefaultsUniversity = UserDefaults.standard.string(forKey: "com.socialuniversity.university") ?? ""
+            let userDefaultsDepartment = UserDefaults.standard.string(forKey: "com.socialuniversity.department") ?? ""
+            
+            if !userDefaultsUniversity.isEmpty && !userDefaultsDepartment.isEmpty {
+                // Eğer UserDefaults'ta değerler varsa ama kullanıcı modelinde yoksa
+                // Bu durumda kullanıcıya seçim yaptırmalıyız, otomatik atama yapmamalıyız
+                print("Uyarı: UserDefaults'ta değerler var ama kullanıcı modelinde yok. Temizleniyor...")
+                savedUniversity = ""
+                savedDepartment = ""
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.university")
+                UserDefaults.standard.removeObject(forKey: "com.socialuniversity.department")
+            }
+            
+            // Son olarak, eğer hiçbir şey yoksa sıfırdan başlat
+            currentStep = 0
+            selectedUniversity = nil
+            selectedDepartment = nil
         }
     }
 }
 
 #Preview {
-    UniversitySelectionView(user: User(id: "preview", email: "test@example.com", name: "Test", surname: "User", studentNumber: "12345", department: ""))
+    // Preview için geçerli bir User nesnesi oluşturmalısınız
+    // Eğer AppSchema modelContainer erişimi yoksa, basit bir User ile test edilebilir
+    let previewUser = User(id: "preview", email: "test@example.com", name: "Test", surname: "User", studentNumber: "12345", department: "", university: "")
+    return UniversitySelectionView(user: previewUser)
+    // .modelContainer(...) // Preview için model container eklemek gerekebilir
 } 

@@ -1,0 +1,27 @@
+MSAL (Microsoft Authentication Library) Paket Sorununu Çözmek İçin Adımlar:
+
+1. Xcode'u kapatın.
+
+2. Aşağıdaki kaşe ve derleme klasörlerini temizleyin:
+   - ~/Library/Caches/org.swift.swiftpm/
+   - ~/Library/Developer/Xcode/DerivedData/
+
+3. Xcode'u açın ve projeyi açın.
+
+4. Xcode ana menüsünden aşağıdaki adımları uygulayın:
+   - File > Packages > Reset Package Caches
+   - File > Packages > Resolve Package Versions
+
+5. Hala çözülmediyse, MSAL paketini projeden kaldırıp yeniden ekleyin:
+   - Project Navigator'da "Social University" projesine tıklayın
+   - "Package Dependencies" sekmesine gidin
+   - Microsoft Authentication Library paketini seçin ve (-) düğmesine basarak kaldırın
+   - (+) düğmesine basarak yeni paket ekleyin
+   - URL: https://github.com/AzureAD/microsoft-authentication-library-for-objc
+   - Version: Up to Next Major Version, 1.8.0
+   - "Add Package" düğmesine tıklayın
+   - Paketi projenize eklemek için hedefi seçin ve "Add Package" düğmesine tıklayın
+
+6. Xcode'u kapatıp tekrar açın ve projeyi yeniden derleyin:
+   - Product > Clean Build Folder (Shift+Command+K)
+   - Product > Build (Command+B)

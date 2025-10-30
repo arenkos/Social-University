@@ -15,8 +15,8 @@ struct Social_UniversityApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     #endif
     
-    // Uygulama genelinde oturum durumunu takip et
-    @AppStorage("com.socialuniversity.isAuthenticated") private var isAuthenticated = false
+    // ✅ Oturum durumunu manuel olarak yönet
+    @State private var isAuthenticated = false
     @State private var currentUser: User?
     
     // Uygulamanın başlangıç durumu
@@ -27,30 +27,64 @@ struct Social_UniversityApp: App {
     // AppSchema'yı kullanarak model container oluştur
     let sharedModelContainer = AppSchema.modelContainer()
     
+    // ✅ App başladığında UserDefaults'tan oturum durumunu oku
+    init() {
+        let savedIsAuthenticated = UserDefaults.standard.bool(forKey: "com.socialuniversity.isAuthenticated")
+        let userId = UserDefaults.standard.string(forKey: "com.socialuniversity.userId") ?? "yok"
+        let userEmail = UserDefaults.standard.string(forKey: "com.socialuniversity.userEmail") ?? "yok"
+        
+        print("🚀 App Init - UserDefaults kontrol:")
+        print("   - isAuthenticated: \(savedIsAuthenticated)")
+        print("   - userId: \(userId)")
+        print("   - userEmail: \(userEmail)")
+        
+        // ✅ Eğer kullanıcı bilgileri var ama isAuthenticated false ise, düzelt
+        if !savedIsAuthenticated && userId != "yok" && userEmail != "yok" {
+            print("🔧 App Init: Kullanıcı bilgileri var ama isAuthenticated false, düzeltiliyor")
+            UserDefaults.standard.set(true, forKey: "com.socialuniversity.isAuthenticated")
+            self._isAuthenticated = State(initialValue: true)
+        } else if savedIsAuthenticated && userId == "yok" {
+            print("⚠️ Authentication var ama kullanıcı bilgileri yok, temizleniyor")
+            UserDefaults.standard.set(false, forKey: "com.socialuniversity.isAuthenticated")
+            self._isAuthenticated = State(initialValue: false)
+        } else {
+            self._isAuthenticated = State(initialValue: savedIsAuthenticated)
+        }
+    }
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(AuthService())
+            ContentView(isAuthenticated: $isAuthenticated)
+                .environmentObject(AuthService(modelContext: nil))
                 .modelContainer(sharedModelContainer)
                 .onAppear {
                     // App başladığında veritabanı hatalarını önlemek için gerekli
-                    print("ContentView görünümü başlatılıyor ve modelContainer ayarlanıyor")
+                    print("📱 App: ContentView görünümü başlatılıyor - isAuthenticated: \(isAuthenticated)")
+                    print("📱 App: UserDefaults kontrol:")
+                    print("   - isAuthenticated: \(UserDefaults.standard.bool(forKey: "com.socialuniversity.isAuthenticated"))")
+                    print("   - userId: \(UserDefaults.standard.string(forKey: "com.socialuniversity.userId") ?? "nil")")
                 }
                 .onChange(of: isAuthenticated) { oldValue, newValue in
-                    print("Oturum durumu değişti: \(oldValue) -> \(newValue)")
-                    if !newValue {
-                        // Çıkış yapıldığında tüm veriler temizlenir
-                        currentUser = nil
-                        isInitialized = false
+                    print("📱 App: Oturum durumu değişti: \(oldValue) -> \(newValue)")
+                    
+                    // ✅ Sadece gerçek değişikliklerde UserDefaults'a kaydet
+                    if oldValue != newValue {
+                        print("📱 App: UserDefaults'a isAuthenticated kaydediliyor: \(newValue)")
+                        UserDefaults.standard.set(newValue, forKey: "com.socialuniversity.isAuthenticated")
                         
-                        // NavigationStack'i yeniden oluşturmak için ID değiştir
-                        resetNavigation.toggle()
-                        
-                        // Bu kısım otomatik olarak giriş sayfasına yönlendirecek
-                        print("Oturum kapatıldı, giriş sayfasına yönlendiriliyor")
-                    } else if !isInitialized {
-                        // Giriş yapıldığında, kullanıcı verilerini yükle
-                        loadUserData()
+                        if !newValue && isInitialized {
+                            // Sadece daha önce giriş yapılmışsa ve şimdi çıkış yapıldıysa
+                            print("📱 App: Kullanıcı çıkış yaptı, giriş sayfasına yönlendiriliyor")
+                            currentUser = nil
+                            isInitialized = false
+                            resetNavigation.toggle()
+                        } else if newValue && !isInitialized {
+                            // Giriş yapıldığında, kullanıcı verilerini yükle
+                            print("📱 App: Kullanıcı giriş yaptı, veriler yükleniyor")
+                            loadUserData()
+                        }
+                    } else {
+                        print("📱 App: isAuthenticated değişikliği yok, UserDefaults güncellenmiyor")
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("LogoutNotification"))) { _ in
