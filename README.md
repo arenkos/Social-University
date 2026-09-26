@@ -1,71 +1,70 @@
-# Sosyal Üniversite Uygulaması
+# Social University
 
-Üniversite öğrencileri için geliştirilmiş bir sohbet uygulaması. Öğrenciler, üniversite e-posta adresleriyle giriş yaparak derslerine katılabilir ve diğer öğrencilerle iletişim kurabilirler.
+A course-based chat app for university students, built as a native iOS client with a PHP/MySQL REST backend. Students sign in, browse and join their courses, and talk with classmates in a chat room per course.
 
-## Özellikler
+> **Status: prototype.** The core flow — sign-in, course list, enrolment and course chat — works end to end. University-email authentication is simulated in this version, and messages are delivered over the REST API rather than in real time. See [Roadmap](#roadmap).
 
-- Microsoft API ile üniversite e-posta adresi üzerinden giriş
-- Ders listesi görüntüleme ve filtreleme
-- Derslere katılma ve ayrılma
-- WhatsApp benzeri sohbet arayüzü
-- Gerçek zamanlı mesajlaşma
+<!-- Add 2-3 screenshots here: course list, course chat, sign-in -->
+<p align="center">
+  <img src="docs/courses.png" width="250" alt="Course list">
+  <img src="docs/chat.png" width="250" alt="Course chat">
+</p>
 
-## Teknik Detaylar
+## Features
 
-### iOS Uygulaması
+- Sign-in flow built around the student's university email address *(verification simulated — see Roadmap)*
+- Course list with filtering
+- Join and leave courses
+- Chat room per course with a familiar messaging-style interface
+- Message history stored server-side and fetched through the API
 
-- Swift ve SwiftUI ile geliştirilmiştir
-- SwiftData ile yerel veritabanı yönetimi
-- URLSession ile API iletişimi
+## Architecture
 
-### Sunucu Tarafı
+```
+iOS app (SwiftUI)  ──HTTPS/JSON──▶  PHP REST API  ──PDO──▶  MySQL
+   │
+   └── SwiftData local store
+```
 
-- PHP ile geliştirilmiş RESTful API
-- MySQL veritabanı
-- PDO ile güvenli veritabanı işlemleri
+**iOS client**
+- Swift and SwiftUI
+- SwiftData for local persistence
+- `URLSession`-based API layer (`APIService.swift`)
 
-## Kurulum
+**Backend**
+- PHP REST API
+- MySQL, accessed through PDO with prepared statements
 
-### iOS Uygulaması
+## API
 
-1. Xcode'u açın
-2. Proje dosyasını açın (`Social University.xcodeproj`)
-3. `APIService.swift` dosyasında `baseURL` değişkenini kendi sunucu adresinizle güncelleyin
-4. Uygulamayı derleyin ve çalıştırın
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/api/login.php` | Sign in with university email |
+| `GET` | `/api/courses.php` | List courses |
+| `POST` | `/api/enroll.php` | Join or leave a course |
+| `GET` | `/api/messages.php` | List messages for a course |
+| `POST` | `/api/messages.php` | Send a message |
 
-### Sunucu Tarafı
+## Running it locally
 
-1. PHP ve MySQL destekli bir web sunucusu kurun
-2. `server` klasöründeki dosyaları sunucunuza yükleyin
-3. `config.php` dosyasında veritabanı bağlantı bilgilerini güncelleyin
-4. `schema.sql` dosyasını MySQL veritabanınızda çalıştırarak tabloları oluşturun
+**Backend**
+1. Set up a web server with PHP and MySQL.
+2. Upload the contents of `server/`.
+3. Copy `config.example.php` to `config.php` and fill in your database credentials.
+4. Run `schema.sql` to create the tables.
 
-## API Endpoint'leri
+**iOS app**
+1. Open `Social University.xcodeproj` in Xcode.
+2. Set `baseURL` in `APIService.swift` to your server address.
+3. Build and run.
 
-### Kullanıcı İşlemleri
+## Roadmap
 
-- `POST /api/login.php`: Microsoft API ile giriş yapar
+These are the two deliberate simplifications in the prototype and how I would replace them:
 
-### Ders İşlemleri
+- **Real university sign-in.** Replace the simulated check with OAuth 2.0 against Microsoft Entra ID, using Microsoft Graph to confirm the account belongs to the university's tenant.
+- **Real-time delivery.** Move message delivery from request/response to WebSockets, with the REST endpoint kept for history and pagination.
 
-- `GET /api/courses.php`: Dersleri listeler
-- `POST /api/enroll.php`: Derse katılma/ayrılma işlemlerini yapar
+## License
 
-### Mesaj İşlemleri
-
-- `GET /api/messages.php`: Bir derse ait mesajları listeler
-- `POST /api/messages.php`: Yeni mesaj gönderir
-
-## Geliştirme
-
-### Microsoft API Entegrasyonu
-
-Gerçek bir uygulamada, Microsoft Graph API kullanarak üniversite e-posta adreslerini doğrulamanız gerekecektir. Bu örnek uygulamada, basitleştirilmiş bir simülasyon kullanılmıştır.
-
-### Gerçek Zamanlı Mesajlaşma
-
-Daha gelişmiş bir sürümde, WebSocket veya Firebase gibi teknolojiler kullanarak gerçek zamanlı mesajlaşma eklenebilir.
-
-## Lisans
-
-Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için `LICENSE` dosyasına bakın. 
+MIT — see [`LICENSE`](LICENSE).
