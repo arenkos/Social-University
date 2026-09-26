@@ -28,6 +28,7 @@ iOS app (SwiftUI)  ──HTTPS/JSON──▶  PHP REST API  ──PDO──▶  
 **Backend**
 - PHP REST API
 - MySQL, accessed through PDO with prepared statements
+- Database credentials read from environment variables; connection errors are logged server-side and never returned to the client
 
 ## API
 
@@ -44,7 +45,7 @@ iOS app (SwiftUI)  ──HTTPS/JSON──▶  PHP REST API  ──PDO──▶  
 **Backend**
 1. Set up a web server with PHP and MySQL.
 2. Upload the contents of `server/`.
-3. Copy `config.example.php` to `config.php` and fill in your database credentials.
+3. Set `DB_HOST`, `DB_NAME`, `DB_USER` and `DB_PASS` as environment variables (local defaults are used if they are not set).
 4. Run `schema.sql` to create the tables.
 
 **iOS app**
