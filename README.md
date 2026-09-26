@@ -4,12 +4,6 @@ A course-based chat app for university students, built as a native iOS client wi
 
 > **Status: prototype.** The core flow — sign-in, course list, enrolment and course chat — works end to end. University-email authentication is simulated in this version, and messages are delivered over the REST API rather than in real time. See [Roadmap](#roadmap).
 
-<!-- Add 2-3 screenshots here: course list, course chat, sign-in -->
-<p align="center">
-  <img src="docs/courses.png" width="250" alt="Course list">
-  <img src="docs/chat.png" width="250" alt="Course chat">
-</p>
-
 ## Features
 
 - Sign-in flow built around the student's university email address *(verification simulated — see Roadmap)*
